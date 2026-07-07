@@ -2,6 +2,7 @@
   "name": "stenod",
   "version": "0.1.0",
   "description": "Local, deterministic, out-of-band session capture daemon for AI-assisted coding.",
+  "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -23,6 +24,6 @@
     "prettier": "^3.3.2",
     "typescript": "^5.5.2",
     "typescript-eslint": "^8.0.0",
-    "vitest": "^1.6.0"
+    "vitest": "^4.1.10"
   }
 }

@@ -217,11 +217,12 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 #### Phase 1.1 — SQLite Connection + WAL Pragmas
 - **Depends on:** 0.1
 - **SSOT ref:** §6.2
-- **Build:** `better-sqlite3` connection module. On open: `PRAGMA journal_mode=WAL`, `PRAGMA synchronous=NORMAL`, `PRAGMA cache_size=-64000`.
+- **Build:** `better-sqlite3` connection module. On open: `PRAGMA journal_mode=WAL`, `PRAGMA synchronous=NORMAL`, `PRAGMA cache_size=-64000`, `PRAGMA foreign_keys=ON`. The FK pragma is set here (not in individual schema files) because it is a per-connection runtime setting that every schema table with `REFERENCES` clauses depends on.
 - **Do NOT:** Create any tables yet.
 - **Done when:**
   - [ ] Connection opens against a fresh file
-  - [ ] All three pragmas confirmed active via query after open
+  - [ ] All three WAL pragmas confirmed active via query after open (`journal_mode=wal`, `synchronous=1`, `cache_size=-64000`)
+  - [ ] `PRAGMA foreign_keys` confirmed ON after open
 - **Verify:** test asserting `PRAGMA journal_mode` returns `wal`, etc.
 
 #### Phase 1.2 — `graph_nodes` Table

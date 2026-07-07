@@ -61,4 +61,12 @@ describe('storage/connection — Phase 1.1', () => {
     const row = db.pragma('cache_size', { simple: true });
     expect(row).toBe(-64000);
   });
+
+  it('PRAGMA foreign_keys returns 1 (ON) after open', () => {
+    const path = freshDbPath();
+    db = openDatabase(path);
+    // better-sqlite3 returns 1 for ON, 0 for OFF.
+    const row = db.pragma('foreign_keys', { simple: true });
+    expect(row).toBe(1);
+  });
 });
