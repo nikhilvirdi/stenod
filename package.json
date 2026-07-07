@@ -1,0 +1,28 @@
+{
+  "name": "stenod",
+  "version": "0.1.0",
+  "description": "Local, deterministic, out-of-band session capture daemon for AI-assisted coding.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "lint": "eslint src",
+    "format:check": "prettier --check src",
+    "format:write": "prettier --write src",
+    "prepublishOnly": "npm run build"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^12.11.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.14.9",
+    "eslint": "^9.5.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.2",
+    "typescript": "^5.5.2",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^1.6.0"
+  }
+}
