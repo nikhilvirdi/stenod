@@ -1,3 +1,0 @@
-"""
-Security utils module.
-"""

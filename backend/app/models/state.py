@@ -1,3 +1,0 @@
-"""
-State models module.
-"""
