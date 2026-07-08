@@ -101,19 +101,19 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 
 | # | Phase | Depends on | Status |
 |---|---|---|---|
-| 0.1 | Project init (Node/TS scaffold) | — | Not Started |
-| 0.2 | README + LICENSE | 0.1 | Not Started |
-| 0.3 | Test framework setup | 0.1 | Not Started |
-| 0.4 | Lint/format setup | 0.1 | Not Started |
-| 1.1 | SQLite connection + WAL pragmas | 0.1 | Not Started |
-| 1.2 | `graph_nodes` table | 1.1 | Not Started |
-| 1.3 | `graph_edges` table | 1.1 | Not Started |
-| 1.4 | `manifest_log` table | 1.1 | Not Started |
-| 1.5 | Schema versioning / migration runner | 1.2, 1.3, 1.4 | Not Started |
-| 1.6 | Storage round-trip tests | 1.5 | Not Started |
-| 2.1 | Workspace sandboxing (`.stenod/`, PID lock) | 1.6 | Not Started |
-| 2.2 | Local auth token (gen/store/rotate) | 2.1 | Not Started |
-| 2.3 | IPC scaffold + token enforcement | 2.2 | Not Started |
+| 0.1 | Project init (Node/TS scaffold) | — | Verified |
+| 0.2 | README + LICENSE | 0.1 | Verified |
+| 0.3 | Test framework setup | 0.1 | Verified |
+| 0.4 | Lint/format setup | 0.1 | Verified |
+| 1.1 | SQLite connection + WAL pragmas | 0.1 | Verified |
+| 1.2 | `graph_nodes` table | 1.1 | Verified |
+| 1.3 | `graph_edges` table | 1.1 | Verified |
+| 1.4 | `manifest_log` table | 1.1 | Verified |
+| 1.5 | Schema versioning / migration runner | 1.2, 1.3, 1.4 | Verified |
+| 1.6 | Storage round-trip tests | 1.5 | Verified |
+| 2.1 | Workspace sandboxing (`.stenod/`, PID lock) | 1.6 | Verified  |
+| 2.2 | Local auth token (gen/store/rotate) | 2.1 | Verified  |
+| 2.3 | IPC scaffold + token enforcement | 2.2 | Verified  |
 | 3.1 | FSM state enum + transitions | 1.6 | Not Started |
 | 3.2 | Recency decay function (fixed formula) | 3.1 | Not Started |
 | 3.3 | LWW conflict resolution | 3.1 | Not Started |
