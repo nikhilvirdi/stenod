@@ -1,0 +1,52 @@
+# Phase 0.5 — CI Pipeline
+#
+# Runs on every push and every pull request targeting main.
+# Steps: install (ci, not install — respects lockfile exactly),
+#        lint, test.
+#
+# Single Ubuntu runner — correct scope for this project: several
+# capture-layer phases (node-pty PTY wrapper, systemd/launchd daemon
+# lifecycle) are Unix/Mac-only per SSOT §9, so a macOS/Windows matrix
+# would be misleading about what is actually portable today.
+#
+# Node version: 22 (Active LTS as of mid-2026).
+# Rationale: no `engines` field in package.json; @types/node is pinned
+# to ^20.14.9 (types only, not the runtime version); chokidar 5 requires
+# ≥ 20.19.0 at minimum; Node 22 LTS satisfies all constraints and
+# matches what GitHub Actions ubuntu-latest ships by default.
+#
+# No publish/deploy step — Phase 14.3 (npm publish dry-run) is a manual,
+# deliberate action, not an automated pipeline step.
+# No coverage reporting, no status badges — separate future decisions.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
