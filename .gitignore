@@ -1,0 +1,31 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+build/
+target/
+.next/
+
+# coverage
+coverage/
+
+# environment secrets
+.env
+.env.local
+.env.*.local
+
+# stenod runtime
+.stenod/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# scratch / audit files
+codebase_dump.txt
+count-tests.js

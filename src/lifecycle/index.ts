@@ -11,3 +11,7 @@ export { recencyDecay } from './decay.js';
 
 export { resolveLwwConflict } from './lww.js';
 export type { LwwResult } from './lww.js';
+
+export { rejectSince, parseDurationToMs } from './reject.js';
+
+export { AntiRotTimer } from './anti-rot.js';
