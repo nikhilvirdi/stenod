@@ -18,6 +18,17 @@
  * it is hashed or stored, so graph_nodes.content actually is the "redacted
  * payload" SSOT §6.2 describes, and `id` (SHA-256 "of content") is computed
  * from that same redacted string — the id matches what's actually stored.
+ *
+ * Phase 7.2 addition: createFileStateCapture() now accepts an optional
+ * `queue` (Phase 6.1/6.2's IngestionQueue) as a 4th parameter. When
+ * provided, the save-event write is routed through
+ * `queue.enqueueOverflowable()` instead of calling writeFileStateNode()
+ * inline — the single shared write path SSOT §6.1 describes ("all tracks
+ * feed one serialized queue"), completing the wiring 6.1's own header
+ * comment deferred to this phase. `queue` is optional and the parameter is
+ * purely additive: every existing call site that omits it keeps the exact
+ * original inline-write behavior, so this is non-breaking for Phase 4.4's
+ * already-Verified callers/tests.
  */
 
 import type Database from 'better-sqlite3';
@@ -26,6 +37,7 @@ import { readFileSync } from 'node:fs';
 import type { FSWatcher } from 'chokidar';
 import { createWatcher } from './watcher.js';
 import { redactSecrets } from './redaction.js';
+import type { IngestionQueue } from './queue.js';
 import type { SessionFsm, FsmState } from '../lifecycle/index.js';
 
 export interface FileStateWriteResult {
@@ -112,11 +124,16 @@ export function writeFileStateNode(
  * swallowed rather than thrown: one race on one file must not take down the
  * whole capture pipeline. Not a named SSOT requirement, a standard
  * defensive measure.
+ *
+ * When `queue` is supplied (Phase 7.2), a queue write failure is swallowed
+ * the same way a read failure is — one bad event must not take down the
+ * capture pipeline or surface as an unhandled rejection.
  */
 export function createFileStateCapture(
   db: Database.Database,
   fsm: SessionFsm,
   projectRoot: string,
+  queue?: IngestionQueue,
 ): FSWatcher {
   return createWatcher(projectRoot, {
     onChange: (filePath) => {
@@ -126,7 +143,15 @@ export function createFileStateCapture(
       } catch {
         return;
       }
-      writeFileStateNode(db, fsm, filePath, content);
+      if (queue) {
+        queue
+          .enqueueOverflowable({ filePath, content }, (item) =>
+            writeFileStateNode(db, fsm, item.filePath, item.content)
+          )
+          .catch(() => {});
+      } else {
+        writeFileStateNode(db, fsm, filePath, content);
+      }
     },
   });
 }

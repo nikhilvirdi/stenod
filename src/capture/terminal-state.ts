@@ -28,6 +28,16 @@
  * redactSecrets() pass Phase 4.5 applies to filesystem content, before it
  * is hashed or stored — so `id` (SHA-256 "of content") matches what's
  * actually persisted, same reasoning as file-state.ts.
+ *
+ * Phase 7.2 addition: createTerminalCapture() now accepts an optional
+ * `queue` (Phase 6.1/6.2's IngestionQueue) as a 4th parameter, mirroring
+ * file-state.ts's Phase 7.2 addition. When provided, both write call sites
+ * (the exit-triggered writeTerminalNode() and the heuristic
+ * writeHeuristicCrashNode()) route through `queue.enqueueOverflowable()`
+ * instead of writing inline. `queue` is optional and purely additive —
+ * every existing call site that omits it keeps the exact original
+ * inline-write behavior and return type, so this is non-breaking for Phase
+ * 5.3/5.4/5.5's already-Verified callers/tests.
  */
 
 import type Database from 'better-sqlite3';
@@ -37,6 +47,7 @@ import type { TerminalWrapperOptions } from './terminal.js';
 import { TerminalBatcher } from './batcher.js';
 import { looksLikeCrash, writeHeuristicCrashNode } from './terminal-heuristic.js';
 import { redactSecrets } from './redaction.js';
+import type { IngestionQueue } from './queue.js';
 import type { SessionFsm, FsmState } from '../lifecycle/index.js';
 
 export type TerminalNodeType = 'TERMINAL_SUCCESS' | 'TERMINAL_ERROR';
@@ -117,6 +128,7 @@ export function createTerminalCapture(
   db: Database.Database,
   fsm: SessionFsm,
   options: TerminalCaptureOptions,
+  queue?: IngestionQueue,
 ): TerminalWrapper {
   let accumulated = '';
   // Phase 5.4: fires at most once per capture session — the first
@@ -138,7 +150,15 @@ export function createTerminalCapture(
       void (async () => {
         await batcher.flush();
         batcher.cleanup();
-        writeTerminalNode(db, fsm, accumulated, exitCode);
+        if (queue) {
+          await queue
+            .enqueueOverflowable({ content: accumulated, exitCode }, (item) =>
+              writeTerminalNode(db, fsm, item.content, item.exitCode)
+            )
+            .catch(() => {});
+        } else {
+          writeTerminalNode(db, fsm, accumulated, exitCode);
+        }
       })();
     },
   });
@@ -151,7 +171,15 @@ export function createTerminalCapture(
       // buffer — a line already scanned in a prior batch isn't re-matched.
       if (!heuristicFlagged && looksLikeCrash(data)) {
         heuristicFlagged = true;
-        writeHeuristicCrashNode(db, fsm, accumulated);
+        if (queue) {
+          queue
+            .enqueueOverflowable({ content: accumulated }, (item) =>
+              writeHeuristicCrashNode(db, fsm, item.content)
+            )
+            .catch(() => {});
+        } else {
+          writeHeuristicCrashNode(db, fsm, accumulated);
+        }
       }
     },
     batchIntervalMs: options.batchIntervalMs,
