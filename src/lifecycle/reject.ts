@@ -49,11 +49,11 @@ export function parseDurationToMs(duration: string): number {
 /**
  * Marks all ACTIVE nodes created within the last `duration` window as REJECTED.
  *
- * @param db       Open better-sqlite3 connection.
- * @param duration String duration like "15m".
- * @param nowMs    Optional reference time (defaults to Date.now()). Used
- *                 to deterministically test the window boundary.
- * @returns        The number of nodes that were successfully rejected.
+ * Takes an open better-sqlite3 connection (`db`), a string `duration` like
+ * "15m", and an optional `nowMs` reference time (defaults to Date.now(),
+ * used to deterministically test the window boundary).
+ *
+ * Returns the number of nodes that were successfully rejected.
  */
 export function rejectSince(
   db: Database.Database,
