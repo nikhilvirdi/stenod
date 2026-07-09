@@ -19,3 +19,11 @@ export type { LocalImprovementResult } from './local-improvement.js';
 // Phase 8.6 — U-shaped output structuring: constraints (primacy) -> packed causal graph (middle) -> resume instruction (recency).
 export { assembleUShapedManifest } from './u-shaped-manifest.js';
 export type { UShapedManifest, RecencyZone } from './u-shaped-manifest.js';
+
+// Phase 8.7 — "Next Actions" block: surfaces the FSM's current unresolved (RUNTIME_ERR) state in the recency zone.
+export { generateNextActionsBlock, withNextActionsBlock } from './next-actions.js';
+export type {
+  NextActionsInput,
+  NextActionsBlock,
+  RecencyZoneWithNextActions,
+} from './next-actions.js';
