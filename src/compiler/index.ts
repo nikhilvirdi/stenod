@@ -11,3 +11,11 @@ export type { CausalCentrality } from './causal-centrality.js';
 // Phase 8.4 — greedy-by-ratio packing: force-include CONSTRAINT nodes, pack the rest by v_i/token_cost.
 export { packByGreedyRatio } from './greedy-packing.js';
 export type { PackableNode, GreedyPackResult } from './greedy-packing.js';
+
+// Phase 8.5 — local improvement pass: swap the lowest-value included node for a higher-value excluded one that fits.
+export { applyLocalImprovementPass } from './local-improvement.js';
+export type { LocalImprovementResult } from './local-improvement.js';
+
+// Phase 8.6 — U-shaped output structuring: constraints (primacy) -> packed causal graph (middle) -> resume instruction (recency).
+export { assembleUShapedManifest } from './u-shaped-manifest.js';
+export type { UShapedManifest, RecencyZone } from './u-shaped-manifest.js';
