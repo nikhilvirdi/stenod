@@ -135,8 +135,8 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 6.3 | Burst-load integration test | 6.2 | Verified |
 | 7.1 | `stenod init` (sandbox + token + service unit) | 2.2 | Verified |
 | 7.2 | `stenod start` / `stenod stop` | 6.3, 7.1 | Verified |
-| 7.3 | `stenod status` | 7.2 | Not Started |
-| 7.4 | Crash recovery validation | 7.2 | Not Started |
+| 7.3 | `stenod status` | 7.2 | Verified |
+| 7.4 | Crash recovery validation | 7.2 | Built (unverified) |
 | 8.1 | Token counting integration | 1.6 | Verified |
 | 8.2 | Utility score calculation | 3.2 | Not Started |
 | 8.3 | Causal centrality (in/out-degree) | 1.6 | Not Started |
