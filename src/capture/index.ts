@@ -39,5 +39,7 @@ export { looksLikeCrash, writeHeuristicCrashNode, HEURISTIC_CRASH_TAG } from './
 // Phase 6.1 — ingestion queue ("the Bouncer"): single serialized write path
 // merging filesystem and terminal event streams. Standalone in this phase —
 // wiring file-state.ts/terminal-state.ts writes through it is Phase 7.2.
+// Phase 6.2 — shared max in-flight depth + disk-spill overflow, additive to
+// the same IngestionQueue class via enqueueOverflowable().
 export { IngestionQueue } from './queue.js';
-export type { QueueTask } from './queue.js';
+export type { QueueTask, OverflowExecutor, IngestionQueueOptions } from './queue.js';

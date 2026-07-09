@@ -105,6 +105,11 @@ export function writeTerminalNode(
   return { id, eventId, type, fsmState, created: info.changes > 0 };
 }
 
+export interface CaptureWrapper extends TerminalWrapper {
+  /** Resolves when the underlying process has exited and all DB writes have settled. */
+  captureClosed: Promise<void>;
+}
+
 export interface TerminalCaptureOptions extends Omit<TerminalWrapperOptions, 'onData' | 'onExit'> {
   batchIntervalMs?: number;
   highWaterMarkBytes?: number;
@@ -124,7 +129,7 @@ export function createTerminalCapture(
   fsm: SessionFsm,
   options: TerminalCaptureOptions,
   queue?: IngestionQueue,
-): TerminalWrapper {
+): CaptureWrapper {
   let accumulated = '';
   // Phase 5.4: fires at most once per capture session — the first
   // crash-shaped chunk is the signal; later chunks (which may well repeat
@@ -138,21 +143,34 @@ export function createTerminalCapture(
   // eslint-disable-next-line prefer-const
   let batcher: TerminalBatcher;
 
+  let resolveClosed!: () => void;
+  const captureClosed = new Promise<void>((resolve) => {
+    resolveClosed = resolve;
+  });
+  const pendingWrites: Promise<void>[] = [];
+
   const wrapper = new TerminalWrapper({
     ...options,
     onData: (chunk) => batcher.onData(chunk),
     onExit: (exitCode) => {
       void (async () => {
-        await batcher.flush();
-        batcher.cleanup();
-        if (queue) {
-          await queue
-            .enqueueOverflowable({ content: accumulated, exitCode }, (item) =>
-              writeTerminalNode(db, fsm, item.content, item.exitCode)
-            )
-            .catch(() => {});
-        } else {
-          writeTerminalNode(db, fsm, accumulated, exitCode);
+        try {
+          await batcher.flush();
+          batcher.cleanup();
+          if (queue) {
+            pendingWrites.push(
+              queue
+                .enqueueOverflowable({ content: accumulated, exitCode }, (item) =>
+                  writeTerminalNode(db, fsm, item.content, item.exitCode)
+                )
+                .catch(() => {})
+            );
+          } else {
+            writeTerminalNode(db, fsm, accumulated, exitCode);
+          }
+          await Promise.all(pendingWrites);
+        } finally {
+          resolveClosed();
         }
       })();
     },
@@ -167,11 +185,13 @@ export function createTerminalCapture(
       if (!heuristicFlagged && looksLikeCrash(data)) {
         heuristicFlagged = true;
         if (queue) {
-          queue
-            .enqueueOverflowable({ content: accumulated }, (item) =>
-              writeHeuristicCrashNode(db, fsm, item.content)
-            )
-            .catch(() => {});
+          pendingWrites.push(
+            queue
+              .enqueueOverflowable({ content: accumulated }, (item) =>
+                writeHeuristicCrashNode(db, fsm, item.content)
+              )
+              .catch(() => {})
+          );
         } else {
           writeHeuristicCrashNode(db, fsm, accumulated);
         }
@@ -181,5 +201,7 @@ export function createTerminalCapture(
     highWaterMarkBytes: options.highWaterMarkBytes,
   });
 
-  return wrapper;
+  const captureWrapper = wrapper as CaptureWrapper;
+  captureWrapper.captureClosed = captureClosed;
+  return captureWrapper;
 }

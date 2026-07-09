@@ -29,7 +29,7 @@ import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
 import { openDatabase, runMigrations } from '../storage/index.js';
 import { SessionFsm } from '../lifecycle/index.js';
-import { writeTerminalNode, createTerminalCapture } from './terminal-state.js';
+import { writeTerminalNode, createTerminalCapture, CaptureWrapper } from './terminal-state.js';
 import { REDACTED_PLACEHOLDER } from './redaction.js';
 import type { TerminalWrapper } from './terminal.js';
 
@@ -178,7 +178,7 @@ describe('capture/terminal-state — Phase 5.3', () => {
     const conn = migratedDb();
     const fsm = new SessionFsm('IDE_IDLE');
 
-    let wrapper: TerminalWrapper | undefined;
+    let wrapper: CaptureWrapper | undefined;
     try {
       wrapper = createTerminalCapture(conn, fsm, {
         shell: 'sh',
@@ -200,7 +200,10 @@ describe('capture/terminal-state — Phase 5.3', () => {
       expect(row['content']).toContain('all good');
       expect(row['fsm_state']).toBe('IDE_IDLE');
     } finally {
-      wrapper?.kill();
+      if (wrapper) {
+        wrapper.kill();
+        await wrapper.captureClosed;
+      }
     }
   });
 
@@ -210,7 +213,7 @@ describe('capture/terminal-state — Phase 5.3', () => {
     const conn = migratedDb();
     const fsm = new SessionFsm('IDE_IDLE');
 
-    let wrapper: TerminalWrapper | undefined;
+    let wrapper: CaptureWrapper | undefined;
     try {
       wrapper = createTerminalCapture(conn, fsm, {
         shell: 'sh',
@@ -231,7 +234,10 @@ describe('capture/terminal-state — Phase 5.3', () => {
       expect(row['fsm_state']).toBe('RUNTIME_ERR');
       expect(fsm.state).toBe('RUNTIME_ERR');
     } finally {
-      wrapper?.kill();
+      if (wrapper) {
+        wrapper.kill();
+        await wrapper.captureClosed;
+      }
     }
   });
 });

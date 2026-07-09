@@ -7,8 +7,7 @@ import { SessionFsm } from '../lifecycle/index.js';
 import { IngestionQueue } from '../capture/queue.js';
 import { createFileStateCapture } from '../capture/file-state.js';
 import { createTerminalCapture } from '../capture/terminal-state.js';
-import type { TerminalCaptureOptions } from '../capture/terminal-state.js';
-import type { TerminalWrapper } from '../capture/terminal.js';
+import type { TerminalCaptureOptions, CaptureWrapper } from '../capture/terminal-state.js';
 
 /**
  * Phase 7.2 — `stenod start` / `stenod stop`
@@ -87,7 +86,7 @@ export interface DaemonHandle {
   fsm: SessionFsm;
   queue: IngestionQueue;
   watcher: FSWatcher;
-  terminal: TerminalWrapper;
+  terminal: CaptureWrapper;
 }
 
 /**
@@ -173,6 +172,7 @@ export async function stopDaemon(
 
   try {
     handle.terminal.kill();
+    await handle.terminal.captureClosed;
   } catch {
     // Already exited — nothing to do.
   }
