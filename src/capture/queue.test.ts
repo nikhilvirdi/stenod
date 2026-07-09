@@ -18,10 +18,24 @@
  *      average + p95 assertions (not a strict per-sample max, to avoid
  *      CI flakiness from GC/scheduler jitter — confirmed as the intended
  *      reading of "under 5ms per event under normal load").
+ *
+ * Phase 6.2 — Backpressure / Overflow Handling Tests (appended below)
+ *
+ * SSOT §6.1 / WORKPLAN Phase 6.2 "Done when" checklist:
+ *   [x] Forced overflow condition results in zero dropped events, correct
+ *       FIFO order on drain
+ *
+ * Exercises the new `enqueueOverflowable()` entry point added in Phase 6.2
+ * (see queue.ts's header comment for why it's a separate method from
+ * Phase 6.1's `enqueue()`): capacity enforcement, real on-disk spill
+ * content, FIFO drain order across resident + overflowed items, per-item
+ * error isolation through the overflow path, a real-write "flood and fully
+ * recover" scenario (the phase's literal Verify line), and a regression
+ * check that `enqueue()` itself is completely unaffected by `maxDepth`.
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
@@ -305,6 +319,172 @@ describe('capture/queue — Phase 6.1', () => {
       const ms = Number(process.hrtime.bigint() - start) / 1e6;
 
       expect(ms).toBeLessThan(5);
+    });
+  });
+});
+
+describe('capture/queue — Phase 6.2 backpressure/overflow', () => {
+  let overflowDir: string;
+
+  afterEach(() => {
+    if (overflowDir && existsSync(overflowDir)) {
+      rmSync(overflowDir, { recursive: true, force: true });
+    }
+  });
+
+  function freshOverflowDir(): string {
+    overflowDir = mkdtempSync(join(tmpdir(), 'stenod-queue-overflow-test-'));
+    return overflowDir;
+  }
+
+  it('constructing with maxDepth but no overflowDir throws (nowhere to spill)', () => {
+    expect(() => new IngestionQueue({ maxDepth: 2 })).toThrow(/overflowDir/);
+  });
+
+  it('flooding past maxDepth results in zero dropped events and correct FIFO order on drain (Phase 6.2 Verify line)', async () => {
+    const queue = new IngestionQueue({ maxDepth: 3, overflowDir: freshOverflowDir() });
+    const order: number[] = [];
+    const N = 10;
+
+    const results = Array.from({ length: N }, (_, i) =>
+      queue.enqueueOverflowable(i, (item: number) => {
+        order.push(item);
+        return item * 2;
+      })
+    );
+
+    // All N calls above ran synchronously (Array.from's mapper never yields
+    // to a microtask), so by this point the queue has already sorted them
+    // into resident-vs-overflowed — some must have overflowed to disk.
+    expect(queue.overflowDepth).toBeGreaterThan(0);
+
+    const values = await Promise.all(results);
+
+    expect(values).toEqual(Array.from({ length: N }, (_, i) => i * 2));
+    expect(order).toEqual(Array.from({ length: N }, (_, i) => i));
+    expect(queue.overflowDepth).toBe(0);
+    expect(queue.depth).toBe(0);
+  });
+
+  it('overflowed items are genuinely persisted to the append-only disk file, not just an in-memory illusion', async () => {
+    const dir = freshOverflowDir();
+    const queue = new IngestionQueue({ maxDepth: 2, overflowDir: dir });
+    const N = 6;
+
+    const results = Array.from({ length: N }, (_, i) =>
+      queue.enqueueOverflowable(i, (item: number) => item)
+    );
+
+    const overflowedBeforeDrain = queue.overflowDepth;
+    expect(overflowedBeforeDrain).toBeGreaterThan(0);
+
+    const filePath = join(dir, 'overflow.ndjson');
+    const linesWrittenSoFar = readFileSync(filePath, 'utf8')
+      .split('\n')
+      .filter((line) => line.length > 0);
+    expect(linesWrittenSoFar.length).toBeGreaterThanOrEqual(overflowedBeforeDrain);
+    const parsed = linesWrittenSoFar.map(
+      (line) => JSON.parse(line) as { id: number; item: number }
+    );
+    // Every parsed line is well-formed NDJSON with a numeric id and the
+    // original item payload — proves real serialization, not a stub.
+    for (const entry of parsed) {
+      expect(typeof entry.id).toBe('number');
+      expect(typeof entry.item).toBe('number');
+    }
+
+    await Promise.all(results);
+  });
+
+  it('a rejected item spilled to disk propagates its error only to its own caller; the queue keeps draining', async () => {
+    const queue = new IngestionQueue({ maxDepth: 1, overflowDir: freshOverflowDir() });
+
+    // item 0 occupies the single resident slot; items 1 and 2 both overflow.
+    const r0 = queue.enqueueOverflowable(0, (item: number) => item);
+    const r1 = queue.enqueueOverflowable(1, () => {
+      throw new Error('overflowed item failed');
+    });
+    const r2 = queue.enqueueOverflowable(2, (item: number) => item);
+
+    expect(queue.overflowDepth).toBeGreaterThan(0);
+
+    await expect(r0).resolves.toBe(0);
+    await expect(r1).rejects.toThrow('overflowed item failed');
+    await expect(r2).resolves.toBe(2);
+    expect(queue.overflowDepth).toBe(0);
+    expect(queue.depth).toBe(0);
+  });
+
+  it('enqueue() (Phase 6.1) is completely unaffected by maxDepth/overflow on the same queue instance', async () => {
+    const queue = new IngestionQueue({ maxDepth: 1, overflowDir: freshOverflowDir() });
+    const N = 20;
+
+    // Far more than maxDepth, but enqueue() never caps or spills — this is
+    // a regression guard that the additive Phase 6.2 change didn't alter
+    // Phase 6.1's already-Verified enqueue() behavior.
+    const results = Array.from({ length: N }, (_, i) => queue.enqueue(() => i * 10));
+
+    const values = await Promise.all(results);
+    expect(values).toEqual(Array.from({ length: N }, (_, i) => i * 10));
+    expect(queue.overflowDepth).toBe(0);
+  });
+
+  describe('real writes through the overflow path', () => {
+    let tempDir: string;
+    let db: Database.Database | undefined;
+
+    function migratedDb(): Database.Database {
+      tempDir = mkdtempSync(join(tmpdir(), 'stenod-queue-overflow-db-test-'));
+      db = openDatabase(join(tempDir, 'graph.db'));
+      runMigrations(db);
+      return db;
+    }
+
+    afterEach(() => {
+      if (db) {
+        db.close();
+        db = undefined;
+      }
+      if (tempDir && existsSync(tempDir)) {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it('a real fs+terminal write burst that exceeds maxDepth completes with zero dropped/duplicated graph_nodes rows (Phase 6.2 "confirm full recovery")', async () => {
+      const conn = migratedDb();
+      const fsm = new SessionFsm();
+      const queue = new IngestionQueue({ maxDepth: 4, overflowDir: freshOverflowDir() });
+      const N = 40;
+
+      const results: Promise<unknown>[] = [];
+      for (let i = 0; i < N; i++) {
+        if (i % 2 === 0) {
+          results.push(
+            queue.enqueueOverflowable(i, (idx: number) =>
+              writeFileStateNode(conn, fsm, `/of-${idx}.ts`, `of-content-${idx}`)
+            )
+          );
+        } else {
+          results.push(
+            queue.enqueueOverflowable(i, (idx: number) =>
+              writeTerminalNode(conn, fsm, `of-term-${idx}`, 0)
+            )
+          );
+        }
+      }
+
+      expect(queue.overflowDepth).toBeGreaterThan(0);
+
+      await Promise.all(results);
+
+      const rows = conn
+        .prepare('SELECT event_id, type, content FROM graph_nodes ORDER BY event_id')
+        .all() as { event_id: number; type: string; content: string }[];
+
+      expect(rows).toHaveLength(N);
+      expect(rows.map((r) => r.event_id)).toEqual(Array.from({ length: N }, (_, i) => i + 1));
+      expect(queue.overflowDepth).toBe(0);
+      expect(queue.depth).toBe(0);
     });
   });
 });
