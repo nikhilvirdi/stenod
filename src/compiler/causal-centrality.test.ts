@@ -39,7 +39,7 @@ describe('compiler/causal-centrality — Phase 8.3', () => {
       .prepare(
         `INSERT INTO graph_nodes
            (id, event_id, type, content, fsm_state, constraint_key, status, source_file, created_at)
-         VALUES (?, ?, 'FILE_STATE', ?, 'IDE_IDLE', NULL, 'ACTIVE', NULL, ?)`,
+         VALUES (?, ?, 'FILE_STATE', ?, 'IDE_IDLE', NULL, 'ACTIVE', NULL, ?)`
       )
       .run(id, eventId, `content-${id}`, Date.now());
   }
@@ -49,12 +49,12 @@ describe('compiler/causal-centrality — Phase 8.3', () => {
     id: string,
     fromNodeId: string,
     toNodeId: string,
-    edgeType: string,
+    edgeType: string
   ): void {
     conn
       .prepare(
         `INSERT INTO graph_edges (id, from_node_id, to_node_id, edge_type, created_at)
-         VALUES (?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?)`
       )
       .run(id, fromNodeId, toNodeId, edgeType, Date.now());
   }
