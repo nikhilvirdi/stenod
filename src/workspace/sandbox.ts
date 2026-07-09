@@ -42,7 +42,7 @@ export function pidLockPath(projectRoot: string): string {
  *   On Windows, Node.js implements the same semantics for signal 0 via
  *   the Win32 OpenProcess API, so this works cross-platform.
  */
-function isProcessAlive(pid: number): boolean {
+export function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
