@@ -147,7 +147,10 @@ export function createTerminalCapture(
   const captureClosed = new Promise<void>((resolve) => {
     resolveClosed = resolve;
   });
-  const pendingWrites: Promise<void>[] = [];
+  // unknown, not void: enqueueOverflowable() resolves to TerminalWriteResult;
+  // this array exists only to synchronize completion via Promise.all() below,
+  // so the resolved value type is deliberately not tracked.
+  const pendingWrites: Promise<unknown>[] = [];
 
   const wrapper = new TerminalWrapper({
     ...options,
