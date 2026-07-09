@@ -21,8 +21,6 @@ export const NODE_TYPES = [
 
 export type NodeType = (typeof NODE_TYPES)[number];
 
-import { FSM_STATES, type FsmState } from '../../lifecycle/fsm.js';
-
 export const NODE_STATUSES = ['ACTIVE', 'REJECTED', 'SUPERSEDED'] as const;
 
 export type NodeStatus = (typeof NODE_STATUSES)[number];
