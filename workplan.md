@@ -130,14 +130,14 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 5.3 | Exit-code signal → node creation | 5.2, 3.1 | Verified |
 | 5.4 | Long-running process stderr heuristic | 5.3 | Verified |
 | 5.5 | Secret redaction pass (terminal) | 5.3 | Verified |
-| 6.1 | Ingestion queue (the Bouncer) | 4.4, 5.3 | Not Started |
+| 6.1 | Ingestion queue (the Bouncer) | 4.4, 5.3 | Verified |
 | 6.2 | Backpressure/overflow disk-spill handling | 6.1 | Not Started |
 | 6.3 | Burst-load integration test | 6.2 | Not Started |
 | 7.1 | `stenod init` (sandbox + token + service unit) | 2.2 | Not Started |
 | 7.2 | `stenod start` / `stenod stop` | 6.3, 7.1 | Not Started |
 | 7.3 | `stenod status` | 7.2 | Not Started |
 | 7.4 | Crash recovery validation | 7.2 | Not Started |
-| 8.1 | Token counting integration | 1.6 | Not Started |
+| 8.1 | Token counting integration | 1.6 | Verified |
 | 8.2 | Utility score calculation | 3.2 | Not Started |
 | 8.3 | Causal centrality (in/out-degree) | 1.6 | Not Started |
 | 8.4 | Greedy-by-ratio packing | 8.1, 8.2, 8.3 | Not Started |
