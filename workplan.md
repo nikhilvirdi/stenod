@@ -138,7 +138,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 7.3 | `stenod status` | 7.2 | Verified |
 | 7.4 | Crash recovery validation | 7.2 | Blocked (Requires Unix host) |
 | 8.1 | Token counting integration | 1.6 | Verified |
-| 8.2 | Utility score calculation | 3.2 | Not Started |
+| 8.2 | Utility score calculation | 3.2 | Verified |
 | 8.3 | Causal centrality (in/out-degree) | 1.6 | Not Started |
 | 8.4 | Greedy-by-ratio packing | 8.1, 8.2, 8.3 | Not Started |
 | 8.5 | Local improvement pass | 8.4 | Not Started |
