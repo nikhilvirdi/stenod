@@ -32,6 +32,7 @@
  */
 
 import type Database from 'better-sqlite3';
+import { nextEventId } from '../storage/index.js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { FSWatcher } from 'chokidar';
@@ -50,25 +51,6 @@ export interface FileStateWriteResult {
    * write was a no-op (see the id-collision note on writeFileStateNode).
    */
   created: boolean;
-}
-
-/**
- * Computes the next monotonic event_id for graph_nodes.
- *
- * There is no schema-level autoincrement column for this (graph_nodes' own
- * primary key is the content-hash `id`, not an integer rowid alias — adding
- * one would mean altering Phase 1.2's already-verified schema, which is out
- * of this phase's scope). MAX(event_id) + 1 over the same table gives a
- * strictly increasing sequence regardless of which capture track wrote the
- * previous row, which is what SSOT's "monotonic, for WAL crash recovery
- * ordering" wants. better-sqlite3 is fully synchronous, so there is no
- * concurrent-write race between reading MAX and inserting.
- */
-function nextEventId(db: Database.Database): number {
-  const row = db
-    .prepare('SELECT COALESCE(MAX(event_id), 0) + 1 AS next FROM graph_nodes')
-    .get() as { next: number };
-  return row.next;
 }
 
 /**

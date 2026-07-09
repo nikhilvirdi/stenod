@@ -46,6 +46,7 @@ import { TerminalWrapper } from './terminal.js';
 import type { TerminalWrapperOptions } from './terminal.js';
 import { TerminalBatcher } from './batcher.js';
 import { looksLikeCrash, writeHeuristicCrashNode } from './terminal-heuristic.js';
+import { nextEventId } from '../storage/index.js';
 import { redactSecrets } from './redaction.js';
 import type { IngestionQueue } from './queue.js';
 import type { SessionFsm, FsmState } from '../lifecycle/index.js';
@@ -62,13 +63,7 @@ export interface TerminalWriteResult {
   created: boolean;
 }
 
-/** Same monotonic event_id strategy as file-state.ts — see that file's doc comment. */
-function nextEventId(db: Database.Database): number {
-  const row = db
-    .prepare('SELECT COALESCE(MAX(event_id), 0) + 1 AS next FROM graph_nodes')
-    .get() as { next: number };
-  return row.next;
-}
+
 
 /**
  * Writes one graph_nodes row for a terminated command: `TERMINAL_SUCCESS`
