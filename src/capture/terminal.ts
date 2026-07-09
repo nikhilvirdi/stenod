@@ -9,7 +9,6 @@
  */
 
 import * as pty from 'node-pty';
-import * as os from 'node:os';
 
 export interface TerminalWrapperOptions {
   /** The shell executable to spawn (e.g. /bin/bash or /bin/zsh) */
