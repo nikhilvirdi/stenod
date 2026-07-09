@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-worker-assets.mjs",
     "test": "vitest run",
     "lint": "eslint src",
     "format:check": "prettier --check src",
@@ -15,7 +15,11 @@
   "license": "MIT",
   "dependencies": {
     "better-sqlite3": "^12.11.1",
-    "chokidar": "5.0.0"
+    "chokidar": "5.0.0",
+    "node-pty": "1.1.0",
+    "tree-sitter-javascript": "^0.25.0",
+    "tree-sitter-typescript": "^0.23.2",
+    "web-tree-sitter": "^0.26.10"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
