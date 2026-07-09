@@ -124,9 +124,9 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 4.2 | web-tree-sitter integration (JS/TS) | 4.1 | Built (unverified) |
 | 4.3 | Constraint comment syntax parser | 4.2 | Built (unverified) |
 | 4.4 | `FILE_STATE` node creation + graph write | 4.2, 3.1 | Built (unverified) |
-| 4.5 | Secret redaction pass (filesystem) | 4.4 | Not Started |
+| 4.5 | Secret redaction pass (filesystem) | 4.4 | Built (unverified) |
 | 5.1 | node-pty shell wrapper | 2.3, 3.1 | Verified |
-| 5.2 | 16ms batching + 64KB backpressure | 5.1 | Not Started |
+| 5.2 | 16ms batching + 64KB backpressure | 5.1 | Verified |
 | 5.3 | Exit-code signal → node creation | 5.2, 3.1 | Not Started |
 | 5.4 | Long-running process stderr heuristic | 5.3 | Not Started |
 | 5.5 | Secret redaction pass (terminal) | 5.3 | Not Started |

@@ -72,6 +72,20 @@ export class TerminalWrapper {
   }
 
   /**
+   * Pause the underlying PTY stream (apply backpressure).
+   */
+  public pause(): void {
+    this.ptyProcess.pause();
+  }
+
+  /**
+   * Resume the underlying PTY stream.
+   */
+  public resume(): void {
+    this.ptyProcess.resume();
+  }
+
+  /**
    * Kill the underlying process.
    */
   public kill(): void {

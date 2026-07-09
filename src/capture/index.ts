@@ -10,6 +10,17 @@ export type { AstLanguage, AstNode, AstParser } from './ast-parser.js';
 export { extractConstraintComments } from './constraint-comment.js';
 export type { ConstraintComment } from './constraint-comment.js';
 
+// Phase 4.4 — FILE_STATE node creation + graph write.
+export { writeFileStateNode, createFileStateCapture } from './file-state.js';
+export type { FileStateWriteResult } from './file-state.js';
+
+// Phase 4.5 — secret redaction (filesystem). Reused by Phase 5.5 for terminal output.
+export { redactSecrets, REDACTED_PLACEHOLDER } from './redaction.js';
+
 // Phase 5.1 — node-pty shell wrapper.
 export { TerminalWrapper } from './terminal.js';
 export type { TerminalWrapperOptions } from './terminal.js';
+
+// Phase 5.2 — Batching + Backpressure.
+export { TerminalBatcher } from './batcher.js';
+export type { BatcherOptions } from './batcher.js';
