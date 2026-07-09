@@ -127,8 +127,8 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 4.5 | Secret redaction pass (filesystem) | 4.4 | Verified |
 | 5.1 | node-pty shell wrapper | 2.3, 3.1 | Verified |
 | 5.2 | 16ms batching + 64KB backpressure | 5.1 | Verified |
-| 5.3 | Exit-code signal → node creation | 5.2, 3.1 | Not Started |
-| 5.4 | Long-running process stderr heuristic | 5.3 | Not Started |
+| 5.3 | Exit-code signal → node creation | 5.2, 3.1 | Built (unverified) |
+| 5.4 | Long-running process stderr heuristic | 5.3 | Built (unverified) |
 | 5.5 | Secret redaction pass (terminal) | 5.3 | Not Started |
 | 6.1 | Ingestion queue (the Bouncer) | 4.4, 5.3 | Not Started |
 | 6.2 | Backpressure/overflow disk-spill handling | 6.1 | Not Started |
