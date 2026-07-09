@@ -105,7 +105,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 0.2 | README + LICENSE | 0.1 | Verified |
 | 0.3 | Test framework setup | 0.1 | Verified |
 | 0.4 | Lint/format setup | 0.1 | Verified |
-| 0.5 | CI pipeline (GitHub Actions) | 0.3, 0.4 | Built (unverified) |
+| 0.5 | CI pipeline (GitHub Actions) | 0.3, 0.4 | Verified |
 | 1.1 | SQLite connection + WAL pragmas | 0.1 | Verified |
 | 1.2 | `graph_nodes` table | 1.1 | Verified |
 | 1.3 | `graph_edges` table | 1.1 | Verified |
@@ -120,7 +120,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 3.3 | LWW conflict resolution | 3.1 | Verified |
 | 3.4 | Time-windowed rejection logic | 3.1 | Verified |
 | 3.5 | Anti-rot timeout logic | 3.1 | Verified |
-| 4.1 | chokidar watcher + ignore-list | 2.3, 3.1 | Built (unverified) |
+| 4.1 | chokidar watcher + ignore-list | 2.3, 3.1 | Verified |
 | 4.2 | web-tree-sitter integration (JS/TS) | 4.1 | Not Started |
 | 4.3 | Constraint comment syntax parser | 4.2 | Not Started |
 | 4.4 | `FILE_STATE` node creation + graph write | 4.2, 3.1 | Not Started |
