@@ -105,6 +105,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 0.2 | README + LICENSE | 0.1 | Verified |
 | 0.3 | Test framework setup | 0.1 | Verified |
 | 0.4 | Lint/format setup | 0.1 | Verified |
+| 0.5 | CI pipeline (GitHub Actions) | 0.3, 0.4 | Built (unverified) |
 | 1.1 | SQLite connection + WAL pragmas | 0.1 | Verified |
 | 1.2 | `graph_nodes` table | 1.1 | Verified |
 | 1.3 | `graph_edges` table | 1.1 | Verified |
@@ -114,12 +115,12 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 2.1 | Workspace sandboxing (`.stenod/`, PID lock) | 1.6 | Verified  |
 | 2.2 | Local auth token (gen/store/rotate) | 2.1 | Verified  |
 | 2.3 | IPC scaffold + token enforcement | 2.2 | Verified  |
-| 3.1 | FSM state enum + transitions | 1.6 | Not Started |
-| 3.2 | Recency decay function (fixed formula) | 3.1 | Not Started |
-| 3.3 | LWW conflict resolution | 3.1 | Not Started |
-| 3.4 | Time-windowed rejection logic | 3.1 | Not Started |
-| 3.5 | Anti-rot timeout logic | 3.1 | Not Started |
-| 4.1 | chokidar watcher + ignore-list | 2.3, 3.1 | Not Started |
+| 3.1 | FSM state enum + transitions | 1.6 | Verified |
+| 3.2 | Recency decay function (fixed formula) | 3.1 | Verified |
+| 3.3 | LWW conflict resolution | 3.1 | Verified |
+| 3.4 | Time-windowed rejection logic | 3.1 | Verified |
+| 3.5 | Anti-rot timeout logic | 3.1 | Verified |
+| 4.1 | chokidar watcher + ignore-list | 2.3, 3.1 | Built (unverified) |
 | 4.2 | web-tree-sitter integration (JS/TS) | 4.1 | Not Started |
 | 4.3 | Constraint comment syntax parser | 4.2 | Not Started |
 | 4.4 | `FILE_STATE` node creation + graph write | 4.2, 3.1 | Not Started |
@@ -209,6 +210,28 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 - **Done when:**
   - [ ] `npm run lint` runs clean on the empty scaffold
 - **Verify:** run `npm run lint`.
+
+#### Phase 0.5 — CI Pipeline
+- **Depends on:** 0.3, 0.4
+- **SSOT ref:** (infra hygiene, not in SSOT — same category as 0.4, a
+  standard baseline that supports the project's stated no-technical-debt goal)
+- **Build:** a GitHub Actions workflow (`.github/workflows/ci.yml`) that
+  runs on every push and pull request to `main`: `npm ci`, `npm run lint`,
+  `npm test`. Nothing beyond that — no deploy step, no npm publish. CD
+  (publishing) stays a manual, deliberate step per Phase 14.3, not automated.
+- **Do NOT:** add a publish/deploy step. Do NOT add build matrix testing
+  across multiple OSes yet — this project is already Unix/Mac-only for
+  several capture-layer phases (per SSOT §9), so a single Ubuntu runner
+  is the correct scope for now. Do NOT add coverage reporting, badges,
+  or anything beyond lint+test — those are separate, later decisions.
+- **Done when:**
+  - A push to a branch triggers the workflow and shows pass/fail status
+    on GitHub
+  - A deliberately broken test or lint violation, pushed to a test
+    branch, causes the workflow to fail visibly
+- **Verify:** push a real commit and confirm the Actions tab shows a
+  run; optionally push one deliberate failure to confirm red status
+  actually appears, then revert it.
 
 ---
 

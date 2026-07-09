@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   FSM_STATES,
   FSM_EVENTS,
-  TRANSITION_TABLE,
   transition,
   SessionFsm,
 } from './fsm.js';
