@@ -132,7 +132,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 5.5 | Secret redaction pass (terminal) | 5.3 | Verified |
 | 6.1 | Ingestion queue (the Bouncer) | 4.4, 5.3 | Verified |
 | 6.2 | Backpressure/overflow disk-spill handling | 6.1 | Verified |
-| 6.3 | Burst-load integration test | 6.2 | Not Started |
+| 6.3 | Burst-load integration test | 6.2 | Verified |
 | 7.1 | `stenod init` (sandbox + token + service unit) | 2.2 | Not Started |
 | 7.2 | `stenod start` / `stenod stop` | 6.3, 7.1 | Not Started |
 | 7.3 | `stenod status` | 7.2 | Not Started |
