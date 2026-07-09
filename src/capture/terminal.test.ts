@@ -20,7 +20,7 @@ describe('Phase 5.1 — node-pty Shell Wrapper', () => {
     const onData = vi.fn();
     const onExit = vi.fn();
 
-    const wrapper = new TerminalWrapper({
+    new TerminalWrapper({
       shell: 'sh',
       args: ['-c', 'echo "hello stenod"'],
       onData,
