@@ -142,8 +142,8 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 8.3 | Causal centrality (in/out-degree) | 1.6 | Verified |
 | 8.4 | Greedy-by-ratio packing | 8.1, 8.2, 8.3 | Verified |
 | 8.5 | Local improvement pass | 8.4 | Verified |
-| 8.6 | U-shaped output structuring | 8.5 | Built (unverified) |
-| 8.7 | "Next Actions" block generation | 8.6, 3.1 | Not Started |
+| 8.6 | U-shaped output structuring | 8.5 | Verified |
+| 8.7 | "Next Actions" block generation | 8.6, 3.1 | Built (unverified) |
 | 8.8 | Compiler correctness/determinism tests | 8.7 | Not Started |
 | 9.1 | Clipboard delivery | 8.8 | Not Started |
 | 9.2 | `manifest_log` write on handoff | 9.1 | Not Started |
