@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { pidLockPath, stenoDir } from '../workspace/sandbox.js';
+import { pidLockPath, stenoDir, isProcessAlive } from '../workspace/sandbox.js';
 import { openDatabase, runMigrations } from '../storage/index.js';
 
 /**
@@ -29,16 +29,7 @@ import { openDatabase, runMigrations } from '../storage/index.js';
  *   reports `running: false`, matching Phase 2.1's own stale-lock
  *   semantics, without inventing a separate "stale" status value SSOT
  *   doesn't ask for.
- * - `isProcessAlive()` below intentionally mirrors (does not import) the
- *   identically-named private helper in `workspace/sandbox.ts`. It is not
- *   exported there, and this phase's Build line doesn't call for changing
- *   Phase 2.1's already-Verified file's exported surface — duplicating
- *   this small (10-line), stable, well-understood liveness check keeps
- *   this phase fully self-contained instead.
- * - If `.stenod/graph.db` doesn't exist yet (e.g. `stenod init` was never
- *   run), status reports `nodeCount: 0`, `lastEventAt: undefined` rather
- *   than throwing. If the file exists but hasn't been migrated,
- *   `runMigrations()` (Phase 1.5, idempotent) is called before querying,
+ *   runMigrations()` (Phase 1.5, idempotent) is called before querying,
  *   guaranteeing the tables exist rather than throwing on "no such table."
  */
 
@@ -53,18 +44,7 @@ export interface DaemonStatus {
   lastEventAt: number | undefined;
 }
 
-/** Mirrors workspace/sandbox.ts's private isProcessAlive() — see this file's header comment. */
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'EPERM') {
-      return true;
-    }
-    return false;
-  }
-}
+
 
 /**
  * Reads the current daemon status for `projectRoot` directly from disk
