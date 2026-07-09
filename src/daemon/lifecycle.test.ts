@@ -12,7 +12,7 @@ import { createFileStateCapture } from '../capture/file-state.js';
 import { attachWorkspace, pidLockPath } from '../workspace/sandbox.js';
 import { startDaemon, stopDaemon } from './lifecycle.js';
 import type { DaemonHandle } from './lifecycle.js';
-import type { TerminalWrapper } from '../capture/terminal.js';
+import type { CaptureWrapper } from '../capture/terminal-state.js';
 
 /**
  * Phase 7.2 — `stenod start` / `stenod stop` Tests
@@ -122,7 +122,10 @@ describe('daemon/lifecycle — Phase 7.2', () => {
     runMigrations(db);
 
     const stubWatcher = { close: async () => {} } as unknown as FSWatcher;
-    const stubTerminal = { kill: () => {} } as unknown as TerminalWrapper;
+    const stubTerminal = {
+      kill: () => {},
+      captureClosed: Promise.resolve(),
+    } as unknown as CaptureWrapper;
 
     return {
       projectRoot: resolvedRoot,

@@ -27,7 +27,6 @@ import { SessionFsm } from '../lifecycle/index.js';
 import { looksLikeCrash, writeHeuristicCrashNode, HEURISTIC_CRASH_TAG } from './terminal-heuristic.js';
 import { createTerminalCapture, CaptureWrapper } from './terminal-state.js';
 import { REDACTED_PLACEHOLDER } from './redaction.js';
-import type { TerminalWrapper } from './terminal.js';
 
 const isWindows = os.platform() === 'win32';
 const EVENT_TIMEOUT_MS = 3000;
