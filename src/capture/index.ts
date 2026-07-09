@@ -24,3 +24,14 @@ export type { TerminalWrapperOptions } from './terminal.js';
 // Phase 5.2 — Batching + Backpressure.
 export { TerminalBatcher } from './batcher.js';
 export type { BatcherOptions } from './batcher.js';
+
+// Phase 5.3 — exit-code signal -> TERMINAL_SUCCESS/TERMINAL_ERROR node creation.
+export { writeTerminalNode, createTerminalCapture } from './terminal-state.js';
+export type {
+  TerminalNodeType,
+  TerminalWriteResult,
+  TerminalCaptureOptions,
+} from './terminal-state.js';
+
+// Phase 5.4 — long-running process stderr heuristic.
+export { looksLikeCrash, writeHeuristicCrashNode, HEURISTIC_CRASH_TAG } from './terminal-heuristic.js';
