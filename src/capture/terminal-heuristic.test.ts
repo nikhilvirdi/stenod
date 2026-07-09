@@ -25,7 +25,7 @@ import Database from 'better-sqlite3';
 import { openDatabase, runMigrations } from '../storage/index.js';
 import { SessionFsm } from '../lifecycle/index.js';
 import { looksLikeCrash, writeHeuristicCrashNode, HEURISTIC_CRASH_TAG } from './terminal-heuristic.js';
-import { createTerminalCapture } from './terminal-state.js';
+import { createTerminalCapture, CaptureWrapper } from './terminal-state.js';
 import { REDACTED_PLACEHOLDER } from './redaction.js';
 import type { TerminalWrapper } from './terminal.js';
 
@@ -174,11 +174,14 @@ describe('capture/terminal-heuristic — Phase 5.4', () => {
   describe('end-to-end: never-exiting fixture process', () => {
     let tempDir: string;
     let db: Database.Database | undefined;
-    let wrapper: TerminalWrapper | undefined;
+    let wrapper: CaptureWrapper | undefined;
 
-    afterEach(() => {
-      wrapper?.kill();
-      wrapper = undefined;
+    afterEach(async () => {
+      if (wrapper) {
+        wrapper.kill();
+        await wrapper.captureClosed;
+        wrapper = undefined;
+      }
       if (db) {
         db.close();
         db = undefined;
