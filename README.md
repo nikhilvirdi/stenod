@@ -1,4 +1,4 @@
-<img width="1280" height="640" alt="stenod" src="https://github.com/user-attachments/assets/6de8bf54-579f-4897-8fb6-48338c63a1f9" />
+<img width="1280" height="640" alt="stenod (1)" src="https://github.com/user-attachments/assets/d8d87268-9e90-4932-8bd1-27ccf695a02e" />
 
 # Stenod
 
