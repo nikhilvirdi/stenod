@@ -1,6 +1,28 @@
+import { existsSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { resolve } from 'node:path';
 import { Command } from 'commander';
 import { stenodInit } from '../daemon/init.js';
-import { WorkspaceLockedError } from '../workspace/sandbox.js';
+import { startDaemon, stopDaemon } from '../daemon/lifecycle.js';
+import { getDaemonStatus } from '../daemon/status.js';
+import { WorkspaceLockedError, pidLockPath } from '../workspace/sandbox.js';
+
+/**
+ * Polls until the Phase 2.1 PID lock file at `lockPath` disappears (i.e. the
+ * daemon that owned it has released it via `detachWorkspace()` inside
+ * `stopDaemon()`), or returns false after `timeoutMs`. Mirrors the
+ * debounce-free polling style `waitForQueueDrain` already uses in
+ * `daemon/lifecycle.ts` for the same class of "wait for an external process
+ * to finish" problem.
+ */
+async function waitForLockRemoval(lockPath: string, timeoutMs = 5000, pollIntervalMs = 50): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (!existsSync(lockPath)) return true;
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+  return !existsSync(lockPath);
+}
 
 export const program = new Command();
 
@@ -38,22 +60,99 @@ program
 program
   .command('start')
   .description('Start the ingestion daemon (default tier: filesystem + terminal)')
-  .action(() => {
-    console.log('Not yet implemented');
+  .option(
+    '--project-root <path>',
+    'Project root directory (defaults to the current working directory) — matches the ' +
+      '--project-root flag the generated systemd/launchd unit (Phase 7.1) invokes this with'
+  )
+  .option('--foreground', 'Run in foreground (used internally by the detached daemon)')
+  .action((options: { projectRoot?: string; foreground?: boolean }) => {
+    const root = options.projectRoot ?? process.cwd();
+
+    try {
+      if (!options.foreground) {
+        const status = getDaemonStatus(root);
+        if (status.running && status.pid !== undefined) {
+          throw new WorkspaceLockedError(resolve(root), status.pid);
+        }
+
+        const child = spawn(process.execPath, [process.argv[1], 'start', '--foreground', '--project-root', root], {
+          detached: true,
+          stdio: 'ignore',
+          cwd: process.cwd(),
+        });
+        child.unref();
+        console.log(`stenod daemon starting in background for ${root}`);
+        return;
+      }
+
+      const handle = startDaemon(root);
+
+      console.log(`stenod daemon started for ${handle.projectRoot} (PID ${process.pid})`);
+      console.log('Press Ctrl+C to stop, or run `stenod stop` from another terminal on this project.');
+
+      let shuttingDown = false;
+      const shutdown = async (): Promise<void> => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        try {
+          await stopDaemon(handle);
+          console.log('stenod daemon stopped.');
+          process.exit(0);
+        } catch (err) {
+          console.error((err as Error).message);
+          process.exit(1);
+        }
+      };
+
+      process.on('SIGINT', shutdown);
+      process.on('SIGTERM', shutdown);
+    } catch (err) {
+      if (err instanceof WorkspaceLockedError) {
+        console.error(err.message);
+        process.exitCode = 1;
+        return;
+      }
+      throw err;
+    }
   });
 
 program
   .command('stop')
   .description('Stop the daemon')
-  .action(() => {
-    console.log('Not yet implemented');
+  .action(async () => {
+    const root = process.cwd();
+    const status = getDaemonStatus(root);
+
+    if (!status.running || status.pid === undefined) {
+      console.log(`stenod: no daemon running for ${root}`);
+      return;
+    }
+
+    process.kill(status.pid, 'SIGTERM');
+    const stopped = await waitForLockRemoval(pidLockPath(root));
+
+    if (stopped) {
+      console.log(`stenod daemon stopped (PID ${status.pid}).`);
+    } else {
+      console.error(`stenod: timed out waiting for daemon (PID ${status.pid}) to stop.`);
+      process.exitCode = 1;
+    }
   });
 
 program
   .command('status')
   .description('Daemon health, node count, last event timestamp')
   .action(() => {
-    console.log('Not yet implemented');
+    const root = process.cwd();
+    const status = getDaemonStatus(root);
+
+    console.log(`Project root: ${root}`);
+    console.log(`Running: ${status.running}${status.pid !== undefined ? ` (PID ${status.pid})` : ''}`);
+    console.log(`Node count: ${status.nodeCount}`);
+    console.log(
+      `Last event: ${status.lastEventAt !== undefined ? new Date(status.lastEventAt).toISOString() : 'never'}`
+    );
   });
 
 program
