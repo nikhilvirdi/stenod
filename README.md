@@ -1,3 +1,5 @@
+<img width="1280" height="640" alt="stenod" src="https://github.com/user-attachments/assets/6de8bf54-579f-4897-8fb6-48338c63a1f9" />
+
 # Stenod
 
 ## The Problem
