@@ -120,7 +120,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 3.3 | LWW conflict resolution | 3.1 | Verified |
 | 3.4 | Time-windowed rejection logic | 3.1 | Verified |
 | 3.5 | Anti-rot timeout logic | 3.1 | Verified |
-| 4.1 | chokidar watcher + ignore-list | 2.3, 3.1 | Built (unverified) â€” regression: `.stenod/` self-watch bug found+fixed during 10.7 |
+| 4.1 | chokidar watcher + ignore-list | 2.3, 3.1 | Verified — regression fixed (.stenod/ self-watch bug) |
 | 4.2 | web-tree-sitter integration (JS/TS) | 4.1 | Verified |
 | 4.3 | Constraint comment syntax parser | 4.2 | Verified |
 | 4.4 | `FILE_STATE` node creation + graph write | 4.2, 3.1 | Verified |
@@ -134,7 +134,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 6.2 | Backpressure/overflow disk-spill handling | 6.1 | Verified |
 | 6.3 | Burst-load integration test | 6.2 | Verified |
 | 7.1 | `stenod init` (sandbox + token + service unit) | 2.2 | Verified |
-| 7.2 | `stenod start` / `stenod stop` | 6.3, 7.1 | Built (unverified) â€” regression: unconditional placeholder terminal capture removed (unreachable, no Gap 3 IPC bridge existed to feed it); daemon is now fs-only pending Gap 3, found+fixed post-10.7 |
+| 7.2 | `stenod start` / `stenod stop` | 6.3, 7.1 | Verified — daemon is fs-only pending Gap 3 (regression fixed) |
 | 7.3 | `stenod status` | 7.2 | Verified |
 | 7.4 | Crash recovery validation | 7.2 | Blocked (Requires Unix host) |
 | 8.1 | Token counting integration | 1.6 | Verified |
@@ -148,16 +148,16 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 8.9 | DB-to-manifest orchestrator | 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7 | Verified |
 | 9.1 | Clipboard delivery | 8.9 | Verified |
 | 9.2 | `manifest_log` write on handoff | 9.1 | Verified |
-| 9.3 | `--worked` / `--failed` feedback tagging | 9.2 | Built (unverified) |
+| 9.3 | `--worked` / `--failed` feedback tagging | 9.2 | Verified |
 | 10.1 | CLI framework setup + skeleton | 0.1 | Verified |
 | 10.2 | Wire `stenod init` | 10.1, 7.1 | Verified |
 | 10.3 | Wire `stenod start` / `stop` / `status` | 10.2, 7.3 | Verified |
 | 10.4 | Wire `stenod handoff` (+worked/failed) | 10.3, 9.3 | Verified |
 | 10.5 | Wire `stenod reject --since` | 10.4, 3.4 | Verified |
-| 10.6 | Wire `stenod anchor` | 10.4 | Built (unverified) |
-| 10.7 | Full end-to-end integration test | 10.6 | Built (unverified) â€” Gap 4 (synthetic TERMINAL_SUCCESS node from killing an unreachable placeholder terminal capture) fixed at root cause in 7.2; test updated to assert the node no longer appears; needs re-verification |
-| 11.1 | Identifier extraction utility | 10.7 | Not Started |
-| 11.2 | Exact-identifier recall calculator | 11.1 | Not Started |
+| 10.6 | Wire `stenod anchor` | 10.4 | Verified |
+| 10.7 | Full end-to-end integration test | 10.6 | Verified — Gap 4 fixed at root cause, re-verified |
+| 11.1 | Identifier extraction utility | 10.7 | Verified |
+| 11.2 | Exact-identifier recall calculator | 11.1 | Verified |
 | 11.3 | Dev-only evaluation harness script | 11.2 | Not Started |
 | 12.1 | Local CA generation + trust store install | 10.7 | Not Started |
 | 12.2 | Local HTTPS proxy + provider allowlist | 12.1 | Not Started |
