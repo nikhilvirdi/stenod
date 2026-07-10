@@ -12,6 +12,7 @@ import { compileManifest } from '../compiler/index.js';
 import { copyManifestToClipboard, writeManifestLogEntry, tagManifestOutcome } from '../delivery/index.js';
 import { deriveCurrentFsmState, deriveUnresolvedErrorContext } from './handoff-context.js';
 import { rejectSince } from '../lifecycle/index.js';
+import { anchorConstraint } from './anchor.js';
 
 /**
  * Polls until the Phase 2.1 PID lock file at `lockPath` disappears (i.e. the
@@ -275,8 +276,36 @@ program
 program
   .command('anchor <text>')
   .description('Create a CONSTRAINT node directly from the CLI')
-  .action((_text) => {
-    console.log('Not yet implemented');
+  .action((text: string) => {
+    const root = process.cwd();
+    if (!existsSync(stenoDir(root))) {
+      console.error(`stenod: no Stenod workspace found at ${root} — run \`stenod init\` first.`);
+      process.exitCode = 1;
+      return;
+    }
+
+    const db = openDatabase(join(stenoDir(root), 'graph.db'));
+    try {
+      runMigrations(db);
+      const result = anchorConstraint(db, text);
+
+      if (!result.created) {
+        console.log(`stenod: identical constraint already anchored (${result.id}) — no change.`);
+        return;
+      }
+
+      console.log(`Anchored CONSTRAINT node ${result.id}.`);
+      if (result.constraintKey) {
+        console.log(`  Key: ${result.constraintKey}`);
+        if (result.lww && result.lww.supersededCount > 0) {
+          console.log(`  Superseded ${result.lww.supersededCount} prior constraint(s) sharing this key.`);
+        }
+      } else {
+        console.log('  No key detected (use "key=value" text to enable conflict resolution).');
+      }
+    } finally {
+      db.close();
+    }
   });
 
 program
