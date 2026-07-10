@@ -31,7 +31,6 @@ import { openDatabase, runMigrations } from '../storage/index.js';
 import { SessionFsm } from '../lifecycle/index.js';
 import { writeTerminalNode, createTerminalCapture, CaptureWrapper } from './terminal-state.js';
 import { REDACTED_PLACEHOLDER } from './redaction.js';
-import type { TerminalWrapper } from './terminal.js';
 
 const isWindows = os.platform() === 'win32';
 
