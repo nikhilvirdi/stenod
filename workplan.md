@@ -134,7 +134,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 6.2 | Backpressure/overflow disk-spill handling | 6.1 | Verified |
 | 6.3 | Burst-load integration test | 6.2 | Verified |
 | 7.1 | `stenod init` (sandbox + token + service unit) | 2.2 | Verified |
-| 7.2 | `stenod start` / `stenod stop` | 6.3, 7.1 | Verified |
+| 7.2 | `stenod start` / `stenod stop` | 6.3, 7.1 | Built (unverified) — regression: unconditional placeholder terminal capture removed (unreachable, no Gap 3 IPC bridge existed to feed it); daemon is now fs-only pending Gap 3, found+fixed post-10.7 |
 | 7.3 | `stenod status` | 7.2 | Verified |
 | 7.4 | Crash recovery validation | 7.2 | Blocked (Requires Unix host) |
 | 8.1 | Token counting integration | 1.6 | Verified |
@@ -155,7 +155,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 10.4 | Wire `stenod handoff` (+worked/failed) | 10.3, 9.3 | Verified |
 | 10.5 | Wire `stenod reject --since` | 10.4, 3.4 | Verified |
 | 10.6 | Wire `stenod anchor` | 10.4 | Built (unverified) |
-| 10.7 | Full end-to-end integration test | 10.6 | Built (unverified) |
+| 10.7 | Full end-to-end integration test | 10.6 | Built (unverified) — Gap 4 (synthetic TERMINAL_SUCCESS node from killing an unreachable placeholder terminal capture) fixed at root cause in 7.2; test updated to assert the node no longer appears; needs re-verification |
 | 11.1 | Identifier extraction utility | 10.7 | Not Started |
 | 11.2 | Exact-identifier recall calculator | 11.1 | Not Started |
 | 11.3 | Dev-only evaluation harness script | 11.2 | Not Started |
@@ -521,8 +521,24 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 - **Depends on:** 6.3, 7.1
 - **SSOT ref:** §5
 - **Build:** daemon process start/stop logic, wiring together the capture tracks (4.x, 5.x) and the ingestion queue (6.x) into one running process.
+- **Regression (found+fixed post-10.7):** `startDaemon()` originally wired
+  up terminal capture (5.x) unconditionally, alongside fs (4.x). This
+  spawned a real default shell (`process.env.SHELL || '/bin/sh'`) that
+  nothing could ever route real developer input to — no IPC bridge from a
+  backgrounded daemon's own PTY exists yet (see Phase 10.7's `e2e.test.ts`
+  Gap 3). Killing that idle shell on `stop()` produced a synthetic
+  `TERMINAL_SUCCESS` node (shell-prompt escape-code noise) that the
+  compiler's packing stages don't filter by type, so it was landing in
+  every real Unix/Mac handoff manifest (documented as Gap 4). Fixed at
+  root cause: `startDaemon()` no longer spawns terminal capture at all.
+  **The daemon is therefore fs-only for now** — the "Done when" line below
+  ("captures fs+terminal events") is deferred until a future phase builds
+  the real mechanism (Gap 3) to feed a backgrounded daemon's capture track
+  real terminal input; SSOT §5's "filesystem + terminal" framing for the
+  default tier is aspirational until then. The literal Verify line below
+  was always fs-only and is unaffected.
 - **Done when:**
-  - [ ] `start` brings up a daemon that actually captures fs+terminal events
+  - [ ] `start` brings up a daemon that actually captures fs+terminal events (fs met; terminal deferred to Gap 3 — see Regression note above)
   - [ ] `stop` cleanly shuts it down, no orphaned processes
 - **Verify:** integration test: start, trigger a file save, confirm a DB row, stop, confirm process exit.
 
