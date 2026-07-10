@@ -65,6 +65,32 @@ import { stenoDir } from '../workspace/sandbox.js';
  *   ConPTY) — gated the same way `daemon/lifecycle.test.ts`'s own
  *   integration test already is.
  *
+ * GAP 4 — `startDaemon()` always spawns a second, unreachable terminal
+ *   capture, and killing it at `stop()` injects a synthetic TERMINAL_ERROR
+ *   node into every real session.
+ *   `daemon/lifecycle.ts`'s `startDaemon()` unconditionally calls
+ *   `createTerminalCapture(db, fsm, options.terminal ?? {}, queue)` —
+ *   independent of, and in addition to, the daemonized PTY Gap 3 already
+ *   describes as unreachable. With no options supplied, `terminal.ts`
+ *   falls back to a real default shell (`process.env.SHELL || '/bin/sh'`)
+ *   that runs for the daemon's whole lifetime with nothing able to type
+ *   into it. `stopDaemon()` then calls `handle.terminal.kill()`, and a
+ *   signal-killed process never reports `exitCode === 0`, so
+ *   `writeTerminalNode()` writes a second, genuine TERMINAL_ERROR row —
+ *   for a shell nobody ever ran a command in. Its content (idle/empty
+ *   output) differs from any real terminal-error content, so it isn't
+ *   deduped by the `INSERT OR IGNORE` id-collision check. `terminal.ts`
+ *   is documented Unix/Mac-only (Windows ConPTY is out of scope), and
+ *   `lifecycle.ts` has no platform guard before this call, so on Windows
+ *   this spawn path never produces a live, killable shell and the
+ *   synthetic node never appears — this test accounts for it only on
+ *   Unix/Mac, below. Confirmed by tracing `lifecycle.ts` /
+ *   `terminal-state.ts` after a red Linux CI run for commit 042d97e; not
+ *   fixed here (a real fix belongs to whichever phase owns
+ *   `startDaemon()`'s terminal wiring, not this test) — this test
+ *   documents and asserts on it as real, current pipeline behavior,
+ *   same as Gaps 1-3.
+ *
  * ADDITIONAL NOTE — headless-CI clipboard risk (not a gap introduced by
  * this phase, but surfaced by it): `stenod handoff`'s real subprocess
  * invocation always calls the real `copyManifestToClipboard()`, with no
@@ -315,13 +341,29 @@ describe('Full End-to-End Integration — Phase 10.7', () => {
         expect(logRows).toHaveLength(1);
         const loggedNodeIds: string[] = JSON.parse(logRows[0].node_ids);
 
-        // Exactly the CONSTRAINT node (primacy, force-included) plus the
-        // TERMINAL_ERROR node (middle zone) on Unix/Mac — REJECTED
-        // FILE_STATE is excluded. On Windows, only the CONSTRAINT node
-        // (no terminal step ran).
+        // GAP 4 (see header comment): `stop()` (step 7, just above) kills
+        // the daemon's own always-on, unreachable placeholder terminal
+        // capture, which writes a second, genuine TERMINAL_ERROR row —
+        // distinct from the manual one queried into `terminalErrorRows`
+        // back in step 5, which predates this one. Re-queried fresh here,
+        // after stop(), rather than reusing `terminalErrorRows`.
+        const terminalErrorRowsAfterStop = isWindows
+          ? []
+          : queryDb<{ id: string }>(
+              "SELECT id FROM graph_nodes WHERE type = 'TERMINAL_ERROR' AND status = 'ACTIVE'"
+            );
+        if (!isWindows) {
+          expect(terminalErrorRowsAfterStop).toHaveLength(2);
+        }
+
+        // Exactly the CONSTRAINT node (primacy, force-included) plus both
+        // ACTIVE TERMINAL_ERROR nodes (middle zone) on Unix/Mac — the
+        // manual step-5 error and the GAP 4 daemon-shell-kill error.
+        // REJECTED FILE_STATE is excluded. On Windows, only the CONSTRAINT
+        // node (no terminal step ran, and GAP 4 doesn't apply there).
         const expectedIncluded = isWindows
           ? [constraintRows[0]]
-          : [constraintRows[0], terminalErrorRows[0]];
+          : [constraintRows[0], ...terminalErrorRowsAfterStop];
         expect(loggedNodeIds).toHaveLength(expectedIncluded.length);
 
         // Fetch full manifest content directly (independent of whether the
