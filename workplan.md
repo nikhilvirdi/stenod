@@ -144,8 +144,9 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 8.5 | Local improvement pass | 8.4 | Verified |
 | 8.6 | U-shaped output structuring | 8.5 | Verified |
 | 8.7 | "Next Actions" block generation | 8.6, 3.1 | Verified |
-| 8.8 | Compiler correctness/determinism tests | 8.7 | Not Started |
-| 9.1 | Clipboard delivery | 8.8 | Not Started |
+| 8.8 | Compiler correctness/determinism tests | 8.7 | Built (unverified) |
+| 8.9 | DB-to-manifest orchestrator | 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7 | Not Started |
+| 9.1 | Clipboard delivery | 8.9 | Not Started |
 | 9.2 | `manifest_log` write on handoff | 9.1 | Not Started |
 | 9.3 | `--worked` / `--failed` feedback tagging | 9.2 | Not Started |
 | 10.1 | CLI framework setup + skeleton | 0.1 | Not Started |
@@ -168,7 +169,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 14.2 | Final README pass | 14.1 | Not Started |
 | 14.3 | npm publish dry-run + package.json review | 14.2 | Not Started |
 
-65 phases total. Deliberately granular enough that no phase requires more than one clear judgment call, and coarse enough that "one phase" still means "one real, testable unit of the system" — not an arbitrarily sliced line of code.
+66 phases total. Deliberately granular enough that no phase requires more than one clear judgment call, and coarse enough that "one phase" still means "one real, testable unit of the system" — not an arbitrarily sliced line of code.
 
 ---
 
@@ -616,10 +617,41 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 
 ---
 
+#### Phase 8.9 — DB-to-Manifest Orchestrator
+- **Depends on:** 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7
+- **SSOT ref:** §6.2, §6.4
+- **Build:** a single function (e.g. `compileManifest(db, tokenBudget)`)
+  that closes the gap left by Phases 8.1–8.8, none of which specify
+  wiring the pipeline to real database rows. It must: (1) query
+  `graph_nodes` for `status = 'ACTIVE'` rows with an **explicit
+  `ORDER BY`** (e.g. `id` or `created_at`) so fetch order is
+  deterministic regardless of SQLite's internal row storage or query
+  plan — this was flagged during Phase 8.8 verification as an
+  unguarded determinism risk; (2) compute each node's token cost
+  (8.1), causal centrality via `graph_edges` (8.3), and utility score
+  (8.2); (3) run greedy-by-ratio packing (8.4) and local improvement
+  (8.5); (4) assemble the U-shaped structure (8.6) and Next Actions
+  block (8.7).
+- **Do NOT:** perform clipboard delivery or `manifest_log` writes —
+  those remain Phase 9.1/9.2's responsibility.
+- **Done when:**
+  - [ ] Running this function twice against an identical DB state
+        produces byte-identical manifest output — genuine end-to-end
+        determinism, closing the gap Phase 8.8's test intentionally
+        left uncovered (documented in that phase's own test file)
+  - [ ] The query includes an explicit `ORDER BY`
+  - [ ] `CONSTRAINT` nodes are force-included via real DB-fetched rows,
+        not mocked objects
+- **Verify:** integration test using a real (temp-file or in-memory)
+  SQLite DB, seeded with a realistic mix of node types/statuses/edges,
+  run twice, diff output byte-for-byte.
+
+---
+
 ## Milestone 9 — Delivery & Audit
 
 #### Phase 9.1 — Clipboard Delivery
-- **Depends on:** 8.8
+- **Depends on:** 8.9
 - **SSOT ref:** §6.5
 - **Build:** `clipboardy` integration copying the compiled manifest.
 - **Done when:**
