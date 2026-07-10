@@ -27,3 +27,7 @@ export type {
   NextActionsBlock,
   RecencyZoneWithNextActions,
 } from './next-actions.js';
+
+// Phase 8.9 — DB-to-manifest orchestrator: wires 8.1-8.7 to real graph_nodes/graph_edges rows.
+export { compileManifest } from './db-to-manifest.js';
+export type { CompileManifestParams, CompiledManifest } from './db-to-manifest.js';
