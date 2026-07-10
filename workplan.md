@@ -147,8 +147,8 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 8.8 | Compiler correctness/determinism tests | 8.7 | Verified |
 | 8.9 | DB-to-manifest orchestrator | 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7 | Verified |
 | 9.1 | Clipboard delivery | 8.9 | Verified |
-| 9.2 | `manifest_log` write on handoff | 9.1 | Built (unverified) |
-| 9.3 | `--worked` / `--failed` feedback tagging | 9.2 | Not Started |
+| 9.2 | `manifest_log` write on handoff | 9.1 | Verified |
+| 9.3 | `--worked` / `--failed` feedback tagging | 9.2 | Built (unverified) |
 | 10.1 | CLI framework setup + skeleton | 0.1 | Not Started |
 | 10.2 | Wire `stenod init` | 10.1, 7.1 | Not Started |
 | 10.3 | Wire `stenod start` / `stop` / `status` | 10.2, 7.3 | Not Started |
