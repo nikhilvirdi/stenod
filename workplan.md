@@ -120,7 +120,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 3.3 | LWW conflict resolution | 3.1 | Verified |
 | 3.4 | Time-windowed rejection logic | 3.1 | Verified |
 | 3.5 | Anti-rot timeout logic | 3.1 | Verified |
-| 4.1 | chokidar watcher + ignore-list | 2.3, 3.1 | Verified |
+| 4.1 | chokidar watcher + ignore-list | 2.3, 3.1 | Built (unverified) — regression: `.stenod/` self-watch bug found+fixed during 10.7 |
 | 4.2 | web-tree-sitter integration (JS/TS) | 4.1 | Verified |
 | 4.3 | Constraint comment syntax parser | 4.2 | Verified |
 | 4.4 | `FILE_STATE` node creation + graph write | 4.2, 3.1 | Verified |
@@ -155,7 +155,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 10.4 | Wire `stenod handoff` (+worked/failed) | 10.3, 9.3 | Verified |
 | 10.5 | Wire `stenod reject --since` | 10.4, 3.4 | Verified |
 | 10.6 | Wire `stenod anchor` | 10.4 | Built (unverified) |
-| 10.7 | Full end-to-end integration test | 10.6 | Not Started |
+| 10.7 | Full end-to-end integration test | 10.6 | Built (unverified) |
 | 11.1 | Identifier extraction utility | 10.7 | Not Started |
 | 11.2 | Exact-identifier recall calculator | 11.1 | Not Started |
 | 11.3 | Dev-only evaluation harness script | 11.2 | Not Started |

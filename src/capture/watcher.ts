@@ -7,6 +7,14 @@
  *   - .git/
  *   - node_modules/
  *   - common build output dirs: dist/, build/, target/, .next/
+ *   - .stenod/ — the daemon's own workspace (Phase 2.1: sandbox, PID lock,
+ *     token, and SQLite DB). Not named in SSOT §6.1's exclusion list, but
+ *     structurally necessary: `.stenod/graph.db` lives inside the watched
+ *     project root, so without this exclusion the daemon watches its own
+ *     database file and re-ingests every WAL write it makes as a new
+ *     FILE_STATE node — a self-amplifying feedback loop discovered during
+ *     Phase 10.7's end-to-end integration test, fixed here as its own
+ *     tracked change (not silently folded into 10.7's own scope).
  *   - anything the project's own .gitignore already excludes
  *   - binaries over 500 KB
  *
@@ -35,6 +43,7 @@ const HARD_EXCLUDED_SEGMENTS: ReadonlySet<string> = new Set([
   'build',
   'target',
   '.next',
+  '.stenod',
 ]);
 
 /**
@@ -250,7 +259,7 @@ export function createWatcher(
 
   const watcher = watch(projectRoot, {
     ignored: ignorePredicate,
-    persistent: false, // tests don't need a long-running handle
+    persistent: true, // MUST be true for the daemon to stay alive and watch
     ignoreInitial: true, // only fire on real changes, not on startup scan
     awaitWriteFinish: {
       stabilityThreshold: 80,
