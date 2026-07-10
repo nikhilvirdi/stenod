@@ -153,8 +153,8 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 10.2 | Wire `stenod init` | 10.1, 7.1 | Verified |
 | 10.3 | Wire `stenod start` / `stop` / `status` | 10.2, 7.3 | Verified |
 | 10.4 | Wire `stenod handoff` (+worked/failed) | 10.3, 9.3 | Verified |
-| 10.5 | Wire `stenod reject --since` | 10.4, 3.4 | Built (unverified) |
-| 10.6 | Wire `stenod anchor` | 10.4 | Not Started |
+| 10.5 | Wire `stenod reject --since` | 10.4, 3.4 | Verified |
+| 10.6 | Wire `stenod anchor` | 10.4 | Built (unverified) |
 | 10.7 | Full end-to-end integration test | 10.6 | Not Started |
 | 11.1 | Identifier extraction utility | 10.7 | Not Started |
 | 11.2 | Exact-identifier recall calculator | 11.1 | Not Started |
