@@ -6,8 +6,6 @@ import { openDatabase, runMigrations } from '../storage/index.js';
 import { SessionFsm } from '../lifecycle/index.js';
 import { IngestionQueue } from '../capture/queue.js';
 import { createFileStateCapture } from '../capture/file-state.js';
-import { createTerminalCapture } from '../capture/terminal-state.js';
-import type { TerminalCaptureOptions, CaptureWrapper } from '../capture/terminal-state.js';
 
 /**
  * Phase 7.2 — `stenod start` / `stenod stop`
@@ -18,14 +16,37 @@ import type { TerminalCaptureOptions, CaptureWrapper } from '../capture/terminal
  * Build line: "daemon process start/stop logic, wiring together the
  * capture tracks (4.x, 5.x) and the ingestion queue (6.x) into one running
  * process." This is the wiring Phase 6.1's own header comment explicitly
- * deferred here: `createFileStateCapture`/`createTerminalCapture` now
- * accept an optional `queue` parameter (see file-state.ts/terminal-state.ts
- * Phase 7.2 addition notes) which `startDaemon()` supplies, so both tracks
- * write through one shared `IngestionQueue` instead of directly to SQLite.
+ * deferred here: `createFileStateCapture` now accepts an optional `queue`
+ * parameter (see file-state.ts's Phase 7.2 addition notes) which
+ * `startDaemon()` supplies, so the fs track writes through the shared
+ * `IngestionQueue` instead of directly to SQLite.
  *
  * Scope note (Do NOT, by the same precedent Phase 7.1 states explicitly):
  * this builds the underlying start/stop functions only — no `commander`
  * CLI command is wired up (that's Milestone 10, not yet started).
+ *
+ * REGRESSION FIX (post-Phase-10.7, both this phase and 10.7 re-flagged for
+ * re-verification): `startDaemon()` previously also unconditionally called
+ * `createTerminalCapture(db, fsm, options.terminal ?? {}, queue)`. With no
+ * terminal options supplied — which is how the real CLI (`program.ts`)
+ * always invokes it — that spawned a real default shell
+ * (`process.env.SHELL || '/bin/sh'`, terminal.ts) that nothing could ever
+ * feed real commands to: there is no IPC bridge from a user's actual
+ * terminal input to a backgrounded daemon's own PTY (documented as Gap 3
+ * in `cli/e2e.test.ts`). `stopDaemon()` killing that idle shell reported a
+ * clean exit, so `writeTerminalNode()` wrote a synthetic `TERMINAL_SUCCESS`
+ * node (raw shell-prompt escape-code noise) into every real Unix/Mac
+ * session — and, since nothing in the compiler filters by node type, that
+ * junk node was packed into every real handoff manifest (Gap 4, confirmed
+ * against real Linux CI diagnostic data). The fix is to not spawn it: the
+ * daemon captures filesystem events only until a future phase builds the
+ * real mechanism (Gap 3) to route developer terminal input to a
+ * backgrounded daemon's capture track. SSOT §5's "filesystem + terminal"
+ * framing and this phase's "Done when" checklist item ("captures
+ * fs+terminal events") are therefore currently aspirational, not met by
+ * the running daemon — flagged here rather than silently resolved; the
+ * phase's literal *Verify* line (start, file save, DB row, stop, process
+ * exit) is fs-only and still holds.
  *
  * Design decisions (documented for review):
  * -----------------------------------------------------------------------
@@ -41,21 +62,17 @@ import type { TerminalCaptureOptions, CaptureWrapper } from '../capture/terminal
  *   engineering default — a tuning knob, not a correctness-affecting
  *   choice (`enqueueOverflowable()` never drops events regardless of
  *   depth; it only decides resident-vs-disk-backed).
- * - `stopDaemon()` needs to know that all in-flight writes — including the
- *   terminal's exit-triggered write, which only gets enqueued
- *   asynchronously after `terminal.kill()` is called — have actually
+ * - `stopDaemon()` needs to know that all in-flight writes have actually
  *   settled before closing the DB, otherwise a write-after-close race is
- *   possible and "clean shutdown" wouldn't be true. Rather than changing
- *   `createTerminalCapture()`'s return type to expose a completion signal
- *   (which would force Phase 5.3's already-Verified test file to change
- *   too), this reuses `IngestionQueue.depth` — a value Phase 6.1/6.2
- *   already expose specifically for this kind of accounting — via a
- *   bounded, debounced poll (`waitForQueueDrain`): drained is only
- *   declared once `depth` has read 0 continuously for a quiet period, so a
- *   momentary "0 because the exit write hasn't been enqueued yet" reading
- *   can't be mistaken for "fully drained." This mirrors the polling
- *   pattern this codebase already uses for async completion detection
- *   (e.g. `waitFor()` in terminal-state.test.ts).
+ *   possible and "clean shutdown" wouldn't be true. This reuses
+ *   `IngestionQueue.depth` — a value Phase 6.1/6.2 already expose
+ *   specifically for this kind of accounting — via a bounded, debounced
+ *   poll (`waitForQueueDrain`): drained is only declared once `depth` has
+ *   read 0 continuously for a quiet period, so a momentary "0 because a
+ *   write hasn't been enqueued yet" reading can't be mistaken for "fully
+ *   drained." This mirrors the polling pattern this codebase already uses
+ *   for async completion detection (e.g. `waitFor()` in
+ *   terminal-state.test.ts).
  */
 
 const DEFAULT_MAX_QUEUE_DEPTH = 500;
@@ -66,8 +83,6 @@ const DRAIN_POLL_INTERVAL_MS = 10;
 export interface StartDaemonOptions {
   /** Overrides the ingestion queue's shared max in-flight depth (Phase 6.2). Defaults to 500. */
   maxQueueDepth?: number;
-  /** Forwarded to createTerminalCapture()/TerminalWrapper (shell, args, cwd, env, batching, etc.). */
-  terminal?: TerminalCaptureOptions;
 }
 
 export interface StopDaemonOptions {
@@ -86,14 +101,20 @@ export interface DaemonHandle {
   fsm: SessionFsm;
   queue: IngestionQueue;
   watcher: FSWatcher;
-  terminal: CaptureWrapper;
 }
 
 /**
  * Starts the ingestion daemon for `projectRoot`: acquires the Phase 2.1
- * workspace lock, opens/migrates the SQLite DB, and brings up both the
- * filesystem (4.4) and terminal (5.3) capture tracks wired through one
- * shared IngestionQueue (6.1/6.2).
+ * workspace lock, opens/migrates the SQLite DB, and brings up the
+ * filesystem (4.4) capture track wired through the shared IngestionQueue
+ * (6.1/6.2).
+ *
+ * Terminal capture (5.3) is deliberately NOT started here — see the
+ * "REGRESSION FIX" note in this file's header comment. There is currently
+ * no mechanism to route real developer terminal input to a backgrounded
+ * daemon's own capture track (Gap 3), so spawning one unconditionally only
+ * produced an unreachable placeholder shell whose eventual kill-triggered
+ * exit polluted every real handoff manifest with a synthetic node (Gap 4).
  *
  * Throws `WorkspaceLockedError` (Phase 2.1) if a live daemon already owns
  * this root.
@@ -113,9 +134,8 @@ export function startDaemon(projectRoot: string, options: StartDaemonOptions = {
   });
 
   const watcher = createFileStateCapture(db, fsm, resolvedRoot, queue);
-  const terminal = createTerminalCapture(db, fsm, options.terminal ?? {}, queue);
 
-  return { projectRoot: resolvedRoot, stenoDir: dir, db, fsm, queue, watcher, terminal };
+  return { projectRoot: resolvedRoot, stenoDir: dir, db, fsm, queue, watcher };
 }
 
 /**
@@ -152,10 +172,11 @@ async function waitForQueueDrain(
 /**
  * Cleanly stops a daemon started via `startDaemon()`:
  *   1. Stops the filesystem watcher (no new fs events after this).
- *   2. Kills the wrapped terminal process (safe if it already exited).
- *   3. Waits for every in-flight/queued write — including the terminal's
- *      exit-triggered write — to settle.
- *   4. Closes the DB connection and releases the Phase 2.1 workspace lock.
+ *   2. Waits for every in-flight/queued write to settle.
+ *   3. Closes the DB connection and releases the Phase 2.1 workspace lock.
+ *
+ * (No terminal process to kill — `startDaemon()` no longer spawns one; see
+ * this file's header comment.)
  *
  * Throws if the queue does not fully drain within the timeout — proceeding
  * to close the DB with writes still in flight would silently lose events,
@@ -169,13 +190,6 @@ export async function stopDaemon(
   options: StopDaemonOptions = {}
 ): Promise<void> {
   await handle.watcher.close();
-
-  try {
-    handle.terminal.kill();
-    await handle.terminal.captureClosed;
-  } catch {
-    // Already exited — nothing to do.
-  }
 
   const drained = await waitForQueueDrain(handle.queue, options);
   if (!drained) {

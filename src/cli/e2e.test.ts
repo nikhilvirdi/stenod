@@ -65,45 +65,48 @@ import { stenoDir } from '../workspace/sandbox.js';
  *   ConPTY) — gated the same way `daemon/lifecycle.test.ts`'s own
  *   integration test already is.
  *
- * GAP 4 — `startDaemon()` always spawns a second, unreachable terminal
- *   capture, and killing it at `stop()` injects a synthetic TERMINAL_SUCCESS
- *   node (shell-prompt escape-code noise) into every real session — and
- *   that node is NOT filtered out of the compiled manifest.
- *   `daemon/lifecycle.ts`'s `startDaemon()` unconditionally calls
+ * GAP 4 — FIXED. `startDaemon()` used to always spawn a second, unreachable
+ *   terminal capture, and killing it at `stop()` injected a synthetic
+ *   TERMINAL_SUCCESS node (shell-prompt escape-code noise) into every real
+ *   session — and that node was NOT filtered out of the compiled manifest.
+ *   `daemon/lifecycle.ts`'s `startDaemon()` used to unconditionally call
  *   `createTerminalCapture(db, fsm, options.terminal ?? {}, queue)` —
  *   independent of, and in addition to, the daemonized PTY Gap 3 already
  *   describes as unreachable. With no options supplied, `terminal.ts`
  *   falls back to a real default shell (`process.env.SHELL || '/bin/sh'`)
- *   that runs for the daemon's whole lifetime with nothing able to type
- *   into it. `stopDaemon()` then calls `handle.terminal.kill()`.
- *   CORRECTED (previous draft of this comment guessed wrong — see below):
- *   on real Linux CI, the killed shell reports `exitCode === 0`, not a
- *   signal-death exit code, so `writeTerminalNode()` writes a
- *   `TERMINAL_SUCCESS` row, not `TERMINAL_ERROR`. Its content is the
+ *   that ran for the daemon's whole lifetime with nothing able to type
+ *   into it. `stopDaemon()` then called `handle.terminal.kill()`. On real
+ *   Linux CI, the killed shell reported `exitCode === 0`, not a
+ *   signal-death exit code, so `writeTerminalNode()` wrote a
+ *   `TERMINAL_SUCCESS` row, not `TERMINAL_ERROR`. Its content was the
  *   shell's own startup/prompt output — bracketed-paste-mode escape
  *   sequences, hostname, cwd (e.g. `[?2004h...runner@runnervm...`) —
  *   captured before the process ever got a chance to run a real command.
- *   Different content than the manual step-5 error, so it isn't deduped by
- *   the `INSERT OR IGNORE` id-collision check. Verified against real
+ *   Different content than the manual step-5 error, so it wasn't deduped
+ *   by the `INSERT OR IGNORE` id-collision check. Verified against real
  *   Linux CI data (a temporary diagnostic dump of `graph_nodes`, commit
  *   094fcc2, run 29110536604): the synthetic row was `event_id: 4, type:
  *   'TERMINAL_SUCCESS'`. Critically, `db-to-manifest.ts` / `greedy-
  *   packing.ts` / `local-improvement.ts` apply no type-based filtering
  *   anywhere (only `status = 'ACTIVE'`, and CONSTRAINT force-inclusion) —
- *   so with content this small, this node comfortably fits the default
- *   8000-token budget and IS packed into the manifest alongside the real
+ *   so with content this small, this node comfortably fit the default
+ *   8000-token budget and WAS packed into the manifest alongside the real
  *   nodes on every real Unix/Mac session, not just this test.
- *   `terminal.ts` is documented Unix/Mac-only (Windows ConPTY is out of
- *   scope), and `lifecycle.ts` has no platform guard before this call, so
- *   on Windows this spawn path never produces a live, killable shell and
- *   the synthetic node never appears — this test accounts for it only on
- *   Unix/Mac, below. First surfaced by a red Linux CI run for commit
- *   042d97e; not fixed here (a real fix belongs to whichever phase owns
- *   `startDaemon()`'s terminal wiring, not this test — arguably a higher-
- *   priority fix than a mere test gap, since it means every real
- *   Unix/Mac handoff manifest today can carry a junk terminal-noise node)
- *   — this test documents and asserts on it as real, current pipeline
- *   behavior, same as Gaps 1-3.
+ *   First surfaced by a red Linux CI run for commit 042d97e.
+ *
+ *   ROOT-CAUSE FIX: `startDaemon()` no longer spawns terminal capture at
+ *   all — nothing in the system could ever route real input to it (the
+ *   same root cause as Gap 3), so spawning it unconditionally only ever
+ *   produced this unreachable placeholder shell. The daemon now captures
+ *   filesystem events only, until a future phase builds the real
+ *   mechanism Gap 3 describes for routing developer terminal input to a
+ *   backgrounded daemon's capture track. This means SSOT §5's "filesystem
+ *   + terminal" framing for the default tier, and Phase 7.2's "Done when"
+ *   checklist line about capturing "fs+terminal events," are currently
+ *   aspirational for a *running* daemon — flagged per the project's
+ *   regression rule, not silently resolved; Phase 7.2's literal Verify
+ *   line was always fs-only and still holds. Step 8 below now asserts the
+ *   synthetic TERMINAL_SUCCESS node no longer appears, on any platform.
  *
  * ADDITIONAL NOTE — headless-CI clipboard risk (not a gap introduced by
  * this phase, but surfaced by it): `stenod handoff`'s real subprocess
@@ -355,45 +358,37 @@ describe('Full End-to-End Integration — Phase 10.7', () => {
         expect(logRows).toHaveLength(1);
         const loggedNodeIds: string[] = JSON.parse(logRows[0].node_ids);
 
-        // GAP 4 (see header comment): `stop()` (step 7, just above) kills
-        // the daemon's own always-on, unreachable placeholder terminal
-        // capture. On real Unix/Mac CI it reports a clean exit (exitCode
-        // 0), so this writes a second, genuine TERMINAL_SUCCESS row —
-        // shell-prompt escape-code noise, not an error — distinct from
-        // the manual TERMINAL_ERROR queried into `terminalErrorRows` back
-        // in step 5 (which predates this one and is unaffected by it).
-        // Both re-queried fresh here, after stop(), since the GAP 4 node
-        // did not exist yet at step 5. Confirmed against real Linux CI
-        // data (diagnostic dump, commit 094fcc2 / run 29110536604) rather
-        // than inferred from source alone.
+        // GAP 4 FIXED (see header comment): `stop()` (step 7, just above)
+        // no longer spawns/kills a placeholder terminal capture, so no
+        // synthetic TERMINAL_SUCCESS row is written on any platform.
+        // Re-queried fresh here, after stop(), to prove the fix at the
+        // exact point the old bug used to fire — not just inferred from
+        // source. `terminalErrorRows` from step 5 predates stop() and is
+        // unaffected by it; re-queried here for the manifest-content check
+        // below.
         const terminalErrorRowsAfterStop = isWindows
           ? []
           : queryDb<{ id: string }>(
               "SELECT id FROM graph_nodes WHERE type = 'TERMINAL_ERROR' AND status = 'ACTIVE'"
             );
-        const terminalSuccessRowsAfterStop = isWindows
-          ? []
-          : queryDb<{ id: string }>(
-              "SELECT id FROM graph_nodes WHERE type = 'TERMINAL_SUCCESS' AND status = 'ACTIVE'"
-            );
+        const terminalSuccessRowsAfterStop = queryDb<{ id: string }>(
+          "SELECT id FROM graph_nodes WHERE type = 'TERMINAL_SUCCESS' AND status = 'ACTIVE'"
+        );
         if (!isWindows) {
           expect(terminalErrorRowsAfterStop).toHaveLength(1);
-          expect(terminalSuccessRowsAfterStop).toHaveLength(1);
         }
+        // No synthetic TERMINAL_SUCCESS node — on Unix/Mac (where GAP 4
+        // used to fire) or Windows (where the daemon never spawned a live
+        // shell to begin with).
+        expect(terminalSuccessRowsAfterStop).toHaveLength(0);
 
         // Exactly the CONSTRAINT node (primacy, force-included) plus the
-        // manual TERMINAL_ERROR and the GAP 4 synthetic TERMINAL_SUCCESS
-        // (both middle zone) on Unix/Mac. Note the synthetic node is NOT
-        // excluded from the manifest — compileManifest()'s packing and
-        // local-improvement stages apply no type-based filtering (only
-        // ACTIVE status + CONSTRAINT force-inclusion; see GAP 4's header
-        // comment), and its tiny content trivially fits the default
-        // 8000-token budget. REJECTED FILE_STATE is excluded, but by
-        // status, not type. On Windows, only the CONSTRAINT node (no
-        // terminal step ran, and GAP 4 doesn't apply there).
+        // manual TERMINAL_ERROR (middle zone) on Unix/Mac. On Windows,
+        // only the CONSTRAINT node (no terminal step ran there — GAP 3).
+        // REJECTED FILE_STATE is excluded, but by status, not type.
         const expectedIncluded = isWindows
           ? [constraintRows[0]]
-          : [constraintRows[0], ...terminalErrorRowsAfterStop, ...terminalSuccessRowsAfterStop];
+          : [constraintRows[0], ...terminalErrorRowsAfterStop];
         expect(loggedNodeIds).toHaveLength(expectedIncluded.length);
 
         // Fetch full manifest content directly (independent of whether the
@@ -407,11 +402,11 @@ describe('Full End-to-End Integration — Phase 10.7', () => {
         expect(includedRows.every((n) => n.status === 'ACTIVE')).toBe(true);
         expect(includedRows.some((n) => n.type === 'CONSTRAINT')).toBe(true);
         expect(includedRows.some((n) => n.type === 'FILE_STATE')).toBe(false);
+        // GAP 4 fixed: never packed into the manifest, because it's never
+        // written at all anymore.
+        expect(includedRows.some((n) => n.type === 'TERMINAL_SUCCESS')).toBe(false);
         if (!isWindows) {
           expect(includedRows.some((n) => n.type === 'TERMINAL_ERROR')).toBe(true);
-          // GAP 4: the daemon's own placeholder-shell-kill node — real,
-          // current behavior, not something this test should hide.
-          expect(includedRows.some((n) => n.type === 'TERMINAL_SUCCESS')).toBe(true);
         }
       } finally {
         // Best-effort cleanup: don't leave a real daemon process running

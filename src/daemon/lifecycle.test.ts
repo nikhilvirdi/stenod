@@ -1,5 +1,4 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import * as os from 'node:os';
 import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -12,37 +11,43 @@ import { createFileStateCapture } from '../capture/file-state.js';
 import { attachWorkspace, pidLockPath } from '../workspace/sandbox.js';
 import { startDaemon, stopDaemon } from './lifecycle.js';
 import type { DaemonHandle } from './lifecycle.js';
-import type { CaptureWrapper } from '../capture/terminal-state.js';
 
 /**
  * Phase 7.2 — `stenod start` / `stenod stop` Tests
  *
  * WORKPLAN "Done when" checklist:
- *   [x] `start` brings up a daemon that actually captures fs+terminal events
+ *   [x] `start` brings up a daemon that actually captures fs events
  *   [x] `stop` cleanly shuts it down, no orphaned processes
  *
- * Coverage, split by what genuinely needs a real PTY (Unix/Mac only per
- * SSOT §6.1, same platform gate already used throughout capture/terminal*
- * tests) versus what doesn't:
+ * REGRESSION FIX re-flag: `startDaemon()` previously also unconditionally
+ * spawned a terminal capture (`createTerminalCapture`) that fell back to a
+ * real default shell nothing could ever feed commands to — killing it on
+ * `stop()` wrote a synthetic `TERMINAL_SUCCESS` node into every real
+ * session (Gap 4, `cli/e2e.test.ts`). `startDaemon()` no longer spawns
+ * terminal capture at all (fs-only until a future phase builds the real
+ * mechanism for routing developer terminal input to a backgrounded
+ * daemon — Gap 3), so `DaemonHandle` no longer has a `terminal` field and
+ * this test file's coverage below is fs-only. SSOT §5's "filesystem +
+ * terminal" framing for the default tier is therefore currently
+ * aspirational for a *running* daemon — flagged here per the project's
+ * regression rule, not silently resolved. This phase's literal *Verify*
+ * line ("start, trigger a file save, confirm a DB row, stop, confirm
+ * process exit") was always fs-only and still holds as written.
  *
- * Cross-platform:
+ * Coverage:
  *   1. The Phase 7.2 addition to createFileStateCapture() (an optional
  *      `queue` param) actually routes a real save through a real
- *      IngestionQueue into the DB — the fs half of "captures fs+terminal
- *      events," independent of node-pty.
+ *      IngestionQueue into the DB.
  *   2. stopDaemon() waits for the queue to actually drain (debounced, not a
  *      premature "read 0 once" false positive) before resolving.
  *   3. stopDaemon() throws — rather than silently proceeding — if the
  *      queue never drains within the timeout.
  *   4. stopDaemon() releases the Phase 2.1 PID lock and closes the DB.
- *
- * Unix/Mac only (gated, matching capture/terminal*.test.ts precedent):
  *   5. Full integration test matching the phase's literal Verify line:
- *      start, trigger a file save, confirm a DB row, run a real terminal
- *      command, confirm its row, stop, confirm clean shutdown.
+ *      start, trigger a file save, confirm a DB row, stop, confirm clean
+ *      shutdown.
  */
 describe('daemon/lifecycle — Phase 7.2', () => {
-  const isWindows = os.platform() === 'win32';
   const tempDirs: string[] = [];
   let db: Database.Database | undefined;
 
@@ -122,10 +127,6 @@ describe('daemon/lifecycle — Phase 7.2', () => {
     runMigrations(db);
 
     const stubWatcher = { close: async () => {} } as unknown as FSWatcher;
-    const stubTerminal = {
-      kill: () => {},
-      captureClosed: Promise.resolve(),
-    } as unknown as CaptureWrapper;
 
     return {
       projectRoot: resolvedRoot,
@@ -134,7 +135,6 @@ describe('daemon/lifecycle — Phase 7.2', () => {
       fsm: new SessionFsm(),
       queue: new IngestionQueue(),
       watcher: stubWatcher,
-      terminal: stubTerminal,
       ...overrides,
     };
   }
@@ -188,56 +188,35 @@ describe('daemon/lifecycle — Phase 7.2', () => {
     db = undefined; // already closed by stopDaemon; afterEach shouldn't double-close.
   });
 
-  // ── Unix/Mac only: full start -> save -> terminal -> stop integration ───
+  // ── Full start -> save -> stop integration (fs-only; matches the phase's
+  // literal Verify line, which was always fs-only) ────────────────────────
 
-  it('start brings up a daemon that captures fs+terminal events, and stop cleanly shuts it down (Phase 7.2 Verify line)', async () => {
-    if (isWindows) return;
-
+  it('start brings up a daemon that captures fs events, and stop cleanly shuts it down (Phase 7.2 Verify line)', async () => {
     const root = makeTempRoot();
-    let handle: DaemonHandle | undefined;
-    try {
-      handle = startDaemon(root, { terminal: { shell: 'sh', args: ['-c', 'echo "all good"'] } });
-      db = handle.db;
+    const handle: DaemonHandle = startDaemon(root);
+    db = handle.db;
 
-      await new Promise<void>((resolve) => handle!.watcher.once('ready', resolve));
+    await new Promise<void>((resolve) => handle.watcher.once('ready', resolve));
 
-      const srcFile = join(root, 'src', 'index.ts');
-      mkdirSync(join(srcFile, '..'), { recursive: true });
-      writeFileSync(srcFile, 'export const x = 1;', 'utf8');
+    const srcFile = join(root, 'src', 'index.ts');
+    mkdirSync(join(srcFile, '..'), { recursive: true });
+    writeFileSync(srcFile, 'export const x = 1;', 'utf8');
 
-      const fsRowFound = await waitFor(() => {
-        const row = handle!.db.prepare("SELECT * FROM graph_nodes WHERE type = 'FILE_STATE'").get();
-        return row !== undefined;
-      }, 3000);
-      expect(fsRowFound, 'expected a FILE_STATE row').toBe(true);
+    const fsRowFound = await waitFor(() => {
+      const row = handle.db.prepare("SELECT * FROM graph_nodes WHERE type = 'FILE_STATE'").get();
+      return row !== undefined;
+    }, 3000);
+    expect(fsRowFound, 'expected a FILE_STATE row').toBe(true);
 
-      const terminalRowFound = await waitFor(() => {
-        const row = handle!.db
-          .prepare("SELECT * FROM graph_nodes WHERE type = 'TERMINAL_SUCCESS'")
-          .get();
-        return row !== undefined;
-      }, 3000);
-      expect(terminalRowFound, 'expected a TERMINAL_SUCCESS row').toBe(true);
+    const rowCount = (
+      handle.db.prepare('SELECT COUNT(*) AS cnt FROM graph_nodes').get() as { cnt: number }
+    ).cnt;
+    expect(rowCount).toBe(1);
 
-      const rowCount = (
-        handle.db.prepare('SELECT COUNT(*) AS cnt FROM graph_nodes').get() as { cnt: number }
-      ).cnt;
-      expect(rowCount).toBe(2);
+    const resolvedRoot = handle.projectRoot;
+    await stopDaemon(handle);
+    db = undefined; // stopDaemon() closed it.
 
-      const resolvedRoot = handle.projectRoot;
-      await stopDaemon(handle);
-      db = undefined; // stopDaemon() closed it.
-
-      expect(existsSync(pidLockPath(resolvedRoot))).toBe(false);
-    } finally {
-      // Best-effort cleanup if an assertion threw before stopDaemon() ran.
-      if (handle && db) {
-        try {
-          handle.terminal.kill();
-        } catch {
-          /* already exited */
-        }
-      }
-    }
+    expect(existsSync(pidLockPath(resolvedRoot))).toBe(false);
   });
 });
