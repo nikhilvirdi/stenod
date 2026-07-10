@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, openSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { Command } from 'commander';
@@ -101,13 +101,26 @@ program
           throw new WorkspaceLockedError(resolve(root), status.pid);
         }
 
+        // Captured to disk (not `stdio: 'ignore'`) so a background daemon
+        // that crashes or misbehaves after detaching is debuggable from
+        // its own log files, rather than requiring manual reproduction —
+        // exactly the gap that made diagnosing Phase 10.7's E2E flake slow.
+        // Truncated ('w') on each start so the logs always reflect the
+        // most recent run, not an ever-growing history across restarts.
+        mkdirSync(stenoDir(root), { recursive: true });
+        const outLogPath = join(stenoDir(root), 'daemon-out.log');
+        const errLogPath = join(stenoDir(root), 'daemon-err.log');
+        const outLog = openSync(outLogPath, 'w');
+        const errLog = openSync(errLogPath, 'w');
+
         const child = spawn(process.execPath, [process.argv[1], 'start', '--foreground', '--project-root', root], {
           detached: true,
-          stdio: 'ignore',
+          stdio: ['ignore', outLog, errLog],
           cwd: process.cwd(),
         });
         child.unref();
         console.log(`stenod daemon starting in background for ${root}`);
+        console.log(`  Logs: ${outLogPath} / ${errLogPath}`);
         return;
       }
 

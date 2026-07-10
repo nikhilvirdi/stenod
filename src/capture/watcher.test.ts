@@ -11,7 +11,7 @@
  * (or confirms their absence) with a short timeout.  No mocking of
  * chokidar internals — we verify by observing what actually fires.
  *
- * Total it() blocks: 13
+ * Total it() blocks: 14
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
@@ -127,6 +127,24 @@ describe('capture/watcher — Phase 4.1', () => {
 
     const fired = await waitFor(() => changedPaths.length > 0, SILENCE_TIMEOUT_MS);
     expect(fired, 'node_modules/ should produce no events').toBe(false);
+  });
+
+  // ── .stenod/ exclusion (regression: self-watch feedback loop) ───────────
+
+  it('.stenod/ files do NOT trigger events (daemon must not watch its own workspace/DB)', async () => {
+    const root = setup();
+    const changedPaths: string[] = [];
+    watcher = createWatcher(root, { onChange: (p) => changedPaths.push(p) });
+
+    // Simulates the daemon's own graph.db (Phase 2.1's workspace, Phase
+    // 1.1's SQLite file) being written to inside the watched project root.
+    // Without this exclusion, every WAL write the daemon makes to its own
+    // DB gets re-ingested as a new FILE_STATE node — a self-amplifying
+    // feedback loop caught during Phase 10.7's real end-to-end test.
+    touch(join(root, '.stenod', 'graph.db'), 'fake sqlite bytes');
+
+    const fired = await waitFor(() => changedPaths.length > 0, SILENCE_TIMEOUT_MS);
+    expect(fired, '.stenod/ should produce no events').toBe(false);
   });
 
   // ── 4. dist/ exclusion ──────────────────────────────────────────────────
