@@ -151,8 +151,8 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 9.3 | `--worked` / `--failed` feedback tagging | 9.2 | Built (unverified) |
 | 10.1 | CLI framework setup + skeleton | 0.1 | Verified |
 | 10.2 | Wire `stenod init` | 10.1, 7.1 | Verified |
-| 10.3 | Wire `stenod start` / `stop` / `status` | 10.2, 7.3 | Built (unverified) |
-| 10.4 | Wire `stenod handoff` (+worked/failed) | 10.3, 9.3 | Not Started |
+| 10.3 | Wire `stenod start` / `stop` / `status` | 10.2, 7.3 | Verified |
+| 10.4 | Wire `stenod handoff` (+worked/failed) | 10.3, 9.3 | Built (unverified) |
 | 10.5 | Wire `stenod reject --since` | 10.4, 3.4 | Not Started |
 | 10.6 | Wire `stenod anchor` | 10.4 | Not Started |
 | 10.7 | Full end-to-end integration test | 10.6 | Not Started |

@@ -1,11 +1,16 @@
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { Command } from 'commander';
 import { stenodInit } from '../daemon/init.js';
 import { startDaemon, stopDaemon } from '../daemon/lifecycle.js';
 import { getDaemonStatus } from '../daemon/status.js';
-import { WorkspaceLockedError, pidLockPath } from '../workspace/sandbox.js';
+import { WorkspaceLockedError, pidLockPath, stenoDir } from '../workspace/sandbox.js';
+import { openDatabase, runMigrations } from '../storage/index.js';
+import type { ManifestOutcome } from '../storage/index.js';
+import { compileManifest } from '../compiler/index.js';
+import { copyManifestToClipboard, writeManifestLogEntry, tagManifestOutcome } from '../delivery/index.js';
+import { deriveCurrentFsmState, deriveUnresolvedErrorContext } from './handoff-context.js';
 
 /**
  * Polls until the Phase 2.1 PID lock file at `lockPath` disappears (i.e. the
@@ -23,6 +28,24 @@ async function waitForLockRemoval(lockPath: string, timeoutMs = 5000, pollInterv
   }
   return !existsSync(lockPath);
 }
+
+/**
+ * Neither SSOT nor WORKPLAN defines a default token budget anywhere —
+ * `compileManifest()` (Phase 8.9) requires one as a plain positional
+ * argument with no built-in default. Per explicit user decision: a fixed,
+ * documented constant here, overridable via `--token-budget`.
+ */
+const DEFAULT_TOKEN_BUDGET = 8000;
+
+/**
+ * The literal recency-zone "resume instruction" text (SSOT §6.4). Neither
+ * SSOT nor WORKPLAN defines what this text should say — Phase 8.6's own
+ * header comment explicitly declines to invent one ("this phase therefore
+ * takes resumeInstruction as an opaque, caller-supplied string rather than
+ * inventing how to generate it"). Per explicit user decision: a fixed,
+ * generic template rather than deriving anything content-specific.
+ */
+const RESUME_INSTRUCTION = 'Resume this coding session using the causal history above.';
 
 export const program = new Command();
 
@@ -160,8 +183,67 @@ program
   .description('Compile and copy the Handoff Manifest to clipboard')
   .option('--worked', 'Tag the outcome of the most recent manifest in the audit log as worked')
   .option('--failed', 'Tag the outcome of the most recent manifest in the audit log as failed')
-  .action((_options) => {
-    console.log('Not yet implemented');
+  .option('--token-budget <n>', `Token budget for the compiled manifest (default: ${DEFAULT_TOKEN_BUDGET})`)
+  .action(async (options: { worked?: boolean; failed?: boolean; tokenBudget?: string }) => {
+    if (options.worked && options.failed) {
+      console.error('stenod: cannot specify both --worked and --failed');
+      process.exitCode = 1;
+      return;
+    }
+
+    const root = process.cwd();
+    if (!existsSync(stenoDir(root))) {
+      console.error(`stenod: no Stenod workspace found at ${root} — run \`stenod init\` first.`);
+      process.exitCode = 1;
+      return;
+    }
+
+    const db = openDatabase(join(stenoDir(root), 'graph.db'));
+    try {
+      runMigrations(db);
+
+      if (options.worked || options.failed) {
+        const outcome: ManifestOutcome = options.worked ? 'WORKED' : 'FAILED';
+        const result = tagManifestOutcome(db, outcome);
+        if (result.updated) {
+          console.log(`Tagged most recent manifest (${result.id}) as ${outcome}.`);
+        } else {
+          console.log('stenod: no manifest_log entries to tag yet — run `stenod handoff` first.');
+        }
+        return;
+      }
+
+      let tokenBudget = DEFAULT_TOKEN_BUDGET;
+      if (options.tokenBudget !== undefined) {
+        const parsed = Number(options.tokenBudget);
+        if (!Number.isInteger(parsed) || parsed <= 0) {
+          console.error(`stenod: --token-budget must be a positive integer (got "${options.tokenBudget}")`);
+          process.exitCode = 1;
+          return;
+        }
+        tokenBudget = parsed;
+      }
+
+      const fsmState = deriveCurrentFsmState(db);
+      const unresolvedErrorContext =
+        fsmState === 'RUNTIME_ERR' ? deriveUnresolvedErrorContext(db) : undefined;
+
+      const manifest = compileManifest(db, tokenBudget, {
+        resumeInstruction: RESUME_INSTRUCTION,
+        fsmState,
+        unresolvedErrorContext,
+      });
+
+      writeManifestLogEntry(db, manifest);
+      await copyManifestToClipboard(manifest);
+
+      const nodeCount = manifest.primacyZone.length + manifest.middleZone.length;
+      console.log(
+        `Handoff Manifest copied to clipboard (${nodeCount} node${nodeCount === 1 ? '' : 's'}, ${tokenBudget}-token budget).`
+      );
+    } finally {
+      db.close();
+    }
   });
 
 program
