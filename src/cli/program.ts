@@ -1,4 +1,6 @@
 import { Command } from 'commander';
+import { stenodInit } from '../daemon/init.js';
+import { WorkspaceLockedError } from '../workspace/sandbox.js';
 
 export const program = new Command();
 
@@ -10,8 +12,27 @@ program
 program
   .command('init')
   .description('Set up daemon + DB for a project directory, generate local auth token, install systemd/launchd unit')
-  .action(() => {
-    console.log('Not yet implemented');
+  .option('--reset', 'Rotate the local auth token')
+  .action((options: { reset?: boolean }) => {
+    try {
+      const result = stenodInit(process.cwd(), { reset: options.reset ?? false });
+
+      console.log(`Initialized Stenod workspace at ${result.projectRoot}`);
+      console.log(`  Sandbox: ${result.stenoDir}`);
+      console.log(`  Token: ${options.reset ? 'rotated' : 'ready'} (${result.tokenPath})`);
+      if (result.serviceUnitPath) {
+        console.log(`  Service unit: ${result.serviceUnitPath}`);
+      } else {
+        console.log(`  Service unit: none (unsupported platform "${result.platform}")`);
+      }
+    } catch (err) {
+      if (err instanceof WorkspaceLockedError) {
+        console.error(err.message);
+        process.exitCode = 1;
+        return;
+      }
+      throw err;
+    }
   });
 
 program
