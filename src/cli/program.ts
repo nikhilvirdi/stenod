@@ -11,6 +11,7 @@ import type { ManifestOutcome } from '../storage/index.js';
 import { compileManifest } from '../compiler/index.js';
 import { copyManifestToClipboard, writeManifestLogEntry, tagManifestOutcome } from '../delivery/index.js';
 import { deriveCurrentFsmState, deriveUnresolvedErrorContext } from './handoff-context.js';
+import { rejectSince } from '../lifecycle/index.js';
 
 /**
  * Polls until the Phase 2.1 PID lock file at `lockPath` disappears (i.e. the
@@ -250,8 +251,25 @@ program
   .command('reject')
   .description('Mark nodes in a time window as REJECTED, excluded from all future manifests')
   .requiredOption('--since <duration>', 'Time window to reject')
-  .action((_options) => {
-    console.log('Not yet implemented');
+  .action((options: { since: string }) => {
+    const root = process.cwd();
+    if (!existsSync(stenoDir(root))) {
+      console.error(`stenod: no Stenod workspace found at ${root} — run \`stenod init\` first.`);
+      process.exitCode = 1;
+      return;
+    }
+
+    const db = openDatabase(join(stenoDir(root), 'graph.db'));
+    try {
+      runMigrations(db);
+      const count = rejectSince(db, options.since);
+      console.log(`Rejected ${count} node${count === 1 ? '' : 's'} created within the last ${options.since}.`);
+    } catch (err) {
+      console.error((err as Error).message);
+      process.exitCode = 1;
+    } finally {
+      db.close();
+    }
   });
 
 program
