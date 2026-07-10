@@ -40,7 +40,7 @@ program
   .description('Compile and copy the Handoff Manifest to clipboard')
   .option('--worked', 'Tag the outcome of the most recent manifest in the audit log as worked')
   .option('--failed', 'Tag the outcome of the most recent manifest in the audit log as failed')
-  .action((options) => {
+  .action((_options) => {
     console.log('Not yet implemented');
   });
 
@@ -48,14 +48,14 @@ program
   .command('reject')
   .description('Mark nodes in a time window as REJECTED, excluded from all future manifests')
   .requiredOption('--since <duration>', 'Time window to reject')
-  .action((options) => {
+  .action((_options) => {
     console.log('Not yet implemented');
   });
 
 program
   .command('anchor <text>')
   .description('Create a CONSTRAINT node directly from the CLI')
-  .action((text) => {
+  .action((_text) => {
     console.log('Not yet implemented');
   });
 
