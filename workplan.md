@@ -138,6 +138,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 7.2 | `stenod start` / `stenod stop` | 6.3, 7.1 | Verified � daemon is fs-only pending Gap 3 (regression fixed) |
 | 7.3 | `stenod status` | 7.2 | Verified |
 | 7.4 | Crash recovery validation | 7.2 | Blocked (Requires Unix host) |
+| 7.5 | Wire terminal capture + IPC auth into the daemon | 7.2, 2.3, 5.3 | Not Started |
 | 8.1 | Token counting integration | 1.6 | Verified |
 | 8.2 | Utility score calculation | 3.2 | Verified |
 | 8.3 | Causal centrality (in/out-degree) | 1.6 | Verified |
@@ -559,6 +560,54 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 - **Done when:**
   - [ ] Force-killing the daemon process results in automatic restart within a reasonable window
 - **Verify:** manual test: `kill -9` the daemon, confirm it comes back.
+
+#### Phase 7.5 — Wire Terminal Capture + IPC Auth into the Daemon
+- **Depends on:** 7.2, 2.3, 5.3
+- **SSOT ref:** §6.1 ("Default tier: filesystem + terminal"), §5
+  ("stenod start | Start the ingestion daemon (default tier: filesystem
+  + terminal)")
+- **Context:** Phase 7.2's original regression note ("Gap 3") deferred
+  wiring real terminal input into a backgrounded daemon's own PTY,
+  since no IPC bridge existed yet from an interactive terminal to a
+  detached process. Phase 2.3 built and Verified a real IPC scaffold
+  with token enforcement specifically for this kind of bridge, but
+  nothing in startDaemon() has ever invoked createIpcServer(), and
+  nothing feeds real terminal input to a backgrounded daemon's capture
+  track through it. This phase closes both gaps together, since the
+  IPC layer is precisely the missing bridge Gap 3 was waiting on.
+- **Build:** wire startDaemon() to also start the Phase 2.3 IPC server
+  (token-enforced), and establish the real bridge from an interactive
+  terminal session to the backgrounded daemon's terminal-capture track
+  (createTerminalCapture(), Phase 5.1-5.5) via that IPC channel — e.g.
+  a thin client component that runs in the user's actual shell,
+  forwards command/exit-code events to the daemon over the token-
+  authenticated socket, and the daemon writes them via the existing,
+  already-Verified createTerminalCapture()/writeTerminalNode() path.
+- **Do NOT:** modify the terminal-capture logic itself (Phase 5.1-5.5)
+  or the IPC token/auth logic itself (Phase 2.2/2.3) — this phase wires
+  existing, tested pieces together, it does not rebuild them.
+- **Regression guard:** this touches src/daemon/lifecycle.ts (Phase
+  7.2, Verified) directly. Per the regression-guard rule, revert 7.2
+  to Built (unverified) once this phase's changes land, and re-verify
+  it (confirming fs capture still works exactly as before) alongside
+  this phase's own verification.
+- **Done when:**
+  - [ ] stenod start genuinely captures both filesystem AND terminal
+        events in the same running session — a real end-to-end test,
+        not two separate unit tests asserting each piece works in
+        isolation
+  - [ ] The IPC server is genuinely started by startDaemon() and
+        genuinely enforces the token (a connection without the correct
+        token is rejected, matching Phase 2.3's original test)
+  - [ ] stenod stop cleanly shuts down both the fs watcher and the
+        terminal bridge, no orphaned processes
+  - [ ] Existing Phase 7.2 fs-only behavior is unaffected — no
+        regression
+- **Verify:** integration test: start the daemon, run a real terminal
+  command with a real exit code through the bridge, confirm both a
+  FILE_STATE node (from a simultaneous file save) and a
+  TERMINAL_SUCCESS/TERMINAL_ERROR node land in graph_nodes in the same
+  session.
 
 ---
 
