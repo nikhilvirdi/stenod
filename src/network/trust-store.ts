@@ -33,6 +33,19 @@ import { ROOT_CA_COMMON_NAME } from './ca.js';
  * This module does NOT install anything on import, does NOT get called from
  * `stenod init`/`start`, and is NOT wired into `enable-network-capture` yet
  * (Phase 12.4). It exists as a standalone, explicitly-invoked capability.
+ *
+ * Phase 12.5 addition — `buildUninstallCommand()`/`uninstallTrustStore()`:
+ * this phase (12.1) originally shipped install + verify only; Phase 12.5
+ * ("Wire `stenod disable-network-capture`") needs a real removal
+ * counterpart to fully revert what `installTrustStore()` does, and the only
+ * correct way to build a matching removal command is to reuse this file's
+ * own `linuxNssDbArg()`/`macLoginKeychainPath()` path-resolution helpers —
+ * duplicating that logic in a separate file would create two independently
+ * maintained sources of truth for "where the trust store lives." Confirmed
+ * with the user before extending this already-Verified phase's file, per
+ * the project's regression-guard rule (this addition reverts Phase 12.1 to
+ * `Built (unverified)` pending re-verification alongside 12.5 — see
+ * WORKPLAN.md's status table).
  */
 
 export interface TrustStoreOptions {
@@ -155,6 +168,46 @@ export function buildVerifyCommand(options: TrustStoreOptions = {}): TrustStoreC
   return { supported: false, platform };
 }
 
+/**
+ * Builds the command that removes a previously-installed cert from the
+ * per-user trust store — the inverse of `buildInstallCommand()`. Added in
+ * Phase 12.5 ("Wire `stenod disable-network-capture`"), which needs a real
+ * removal counterpart to `buildInstallCommand()`/`installTrustStore()` that
+ * did not exist when this phase (12.1) originally shipped install/verify
+ * only. Reuses the exact same `linuxNssDbArg()`/`macLoginKeychainPath()`
+ * path-resolution helpers as the install path, deliberately — one source
+ * of truth for "where the trust store lives," not a second, independently
+ * maintained copy of that logic.
+ *
+ * - macOS: `security delete-certificate -c "Stenod Local CA" <login keychain>`
+ *   — removes by common name from the same login keychain the cert was
+ *   added to. No `-r`/trust-policy flag: `delete-certificate` doesn't take one.
+ * - Linux: `certutil -d sql:<home>/.pki/nssdb -D -n <nickname>` — deletes
+ *   (`-D`) the cert with this nickname from the same per-user NSS DB.
+ * - Anything else (including `win32`): `{ supported: false }`.
+ */
+export function buildUninstallCommand(options: TrustStoreOptions = {}): TrustStoreCommand {
+  const { platform, homeDir } = resolveOptions(options);
+
+  if (platform === 'darwin') {
+    return {
+      supported: true,
+      cmd: 'security',
+      args: ['delete-certificate', '-c', ROOT_CA_COMMON_NAME, macLoginKeychainPath(homeDir)],
+    };
+  }
+
+  if (platform === 'linux') {
+    return {
+      supported: true,
+      cmd: 'certutil',
+      args: ['-d', linuxNssDbArg(homeDir), '-D', '-n', ROOT_CA_COMMON_NAME],
+    };
+  }
+
+  return { supported: false, platform };
+}
+
 /** Thrown by `installTrustStore()`/`verifyTrustStoreInstall()` on a platform outside Linux/Mac scope. */
 export class UnsupportedPlatformError extends Error {
   constructor(
@@ -214,6 +267,29 @@ export function verifyTrustStoreInstall(options: TrustStoreOptions = {}): TrustS
   const command = buildVerifyCommand(options);
   if (!command.supported) {
     throw new UnsupportedPlatformError(command.platform, 'verification');
+  }
+
+  const result = spawnSync(command.cmd, command.args, { encoding: 'utf8' });
+  return {
+    success: result.status === 0,
+    platform: options.platform ?? process.platform,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
+  };
+}
+
+/**
+ * Runs `buildUninstallCommand()`'s command, actually removing the cert from
+ * the per-user trust store. Throws `UnsupportedPlatformError` on any
+ * platform other than Linux/Mac, matching `installTrustStore()`'s own
+ * precedent exactly.
+ *
+ * Added in Phase 12.5 — see `buildUninstallCommand()`'s header for why.
+ */
+export function uninstallTrustStore(options: TrustStoreOptions = {}): TrustStoreCommandResult {
+  const command = buildUninstallCommand(options);
+  if (!command.supported) {
+    throw new UnsupportedPlatformError(command.platform, 'removal');
   }
 
   const result = spawnSync(command.cmd, command.args, { encoding: 'utf8' });
