@@ -13,7 +13,7 @@ import { copyManifestToClipboard, writeManifestLogEntry, tagManifestOutcome } fr
 import { deriveCurrentFsmState, deriveUnresolvedErrorContext } from './handoff-context.js';
 import { rejectSince } from '../lifecycle/index.js';
 import { anchorConstraint } from './anchor.js';
-
+import { runMcpServer } from '../mcp/index.js';
 /**
  * Polls until the Phase 2.1 PID lock file at `lockPath` disappears (i.e. the
  * daemon that owned it has released it via `detachWorkspace()` inside
@@ -258,6 +258,22 @@ program
       );
     } finally {
       db.close();
+    }
+  });
+
+program
+  .command('mcp')
+  .description('Run as an MCP server over stdio to expose the handoff resource')
+  .action(async () => {
+    try {
+      await runMcpServer();
+    } catch (err) {
+      if (err instanceof Error) {
+        console.error(err.message);
+      } else {
+        console.error(String(err));
+      }
+      process.exitCode = 1;
     }
   });
 
