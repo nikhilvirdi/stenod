@@ -54,7 +54,17 @@ export interface PackableNode {
   status: NodeStatus;
   /** v_i — Phase 8.2's calculateUtilityScore() output for this node. */
   utilityScore: number;
-  /** Phase 8.1's countTokens() output for this node's content. */
+  /**
+   * Phase 8.10 — SSOT §6.4 "Tiered content inclusion": the actual text this
+   * node contributes to the compiled manifest (full content, a bounded
+   * excerpt, or a deterministic one-line summary, depending on tier —
+   * derived by Phase 8.9's `compileManifest()`, not by this file). Carried
+   * as a plain field here so packing/improvement/assembly (this phase, 8.5,
+   * 8.6) transport it through unchanged, the same way they already
+   * transport every other node field.
+   */
+  contentPreview: string;
+  /** Phase 8.1's countTokens() output for this node's `contentPreview` (Phase 8.10: not the raw content — see that phase's tiering rule). */
   tokenCost: number;
 }
 

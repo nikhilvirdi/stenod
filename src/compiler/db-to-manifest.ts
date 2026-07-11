@@ -69,6 +69,21 @@ import type { RecencyZoneWithNextActions } from './next-actions.js';
  *   a contradiction.
  * - Does NOT perform clipboard delivery or write to `manifest_log` — purely
  *   a read + pure-function pipeline, matching the phase's "Do NOT."
+ *
+ * Phase 8.10 addition — Tiered Content Inclusion Fix (SSOT §6.4 "Tiered
+ * content inclusion"): the original version of this file computed each
+ * node's `tokenCost` from `row.content` and then discarded `row.content`
+ * entirely — every packed node carried only `{id, type, status,
+ * utilityScore, tokenCost}`, so the compiled manifest, while structurally
+ * correct, contained no actual resumable text. Fixed by deriving a
+ * `contentPreview` per node (below, `deriveContentPreview()`) via three
+ * fixed, deterministic tiers — CONSTRAINT nodes get full uncapped content;
+ * `utilityScore >= 0.6` nodes get a bounded excerpt capped at 300 tokens;
+ * everything else gets a fixed one-line template (never an LLM call) — and
+ * `tokenCost` is now computed from that emitted `contentPreview`, not from
+ * raw `row.content`, so the packing ratio math reflects what's actually
+ * included. `source_file` is now selected alongside the other columns
+ * because the tier-3 template needs it.
  */
 
 export interface CompileManifestParams {
@@ -92,7 +107,70 @@ interface ActiveNodeRow {
   type: NodeType;
   content: string;
   status: NodeStatus;
+  source_file: string | null;
   created_at: number;
+}
+
+/**
+ * SSOT §6.4 "Tiered content inclusion" — fixed constants, not configurable,
+ * matching this system's static-λ determinism principle (§6.4's own
+ * `λ1/λ2/λ3`, CLAUDE.md's "λ weights are static... never configurable").
+ */
+const TIER2_MIN_UTILITY_SCORE = 0.6;
+const TIER2_EXCERPT_MAX_TOKENS = 300;
+
+/**
+ * Returns the longest prefix of `content` (by character count) whose token
+ * count, per Phase 8.1's `countTokens()`, does not exceed `maxTokens`.
+ * Binary search over character offsets rather than importing `gpt-tokenizer`
+ * `encode`/`decode` directly here — keeps this file's only tokenizer
+ * dependency the same single `countTokens()` call it already imports, so
+ * `gpt-tokenizer` itself stays used from exactly one place (Phase 8.1's
+ * `tokenizer.ts`) across the whole codebase.
+ */
+function excerptToTokenLimit(content: string, maxTokens: number): string {
+  if (countTokens(content) <= maxTokens) {
+    return content;
+  }
+
+  let lo = 0;
+  let hi = content.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (countTokens(content.slice(0, mid)) <= maxTokens) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return content.slice(0, lo);
+}
+
+/**
+ * Applies SSOT §6.4's three fixed content tiers to a single node, at pack
+ * time:
+ *   1. `CONSTRAINT` nodes -> full, uncapped `content` (already naturally
+ *      short — a rule or decision line — so no truncation is applied).
+ *   2. `utilityScore >= TIER2_MIN_UTILITY_SCORE` -> a bounded excerpt of
+ *      `content`, capped at `TIER2_EXCERPT_MAX_TOKENS` tokens.
+ *   3. Everything else -> a fixed, deterministic one-line template
+ *      (`"{type} in {source_file}"`, or `"{type}"` if `source_file` is
+ *      null) — never an LLM call or free-form summarization, preserving
+ *      SSOT §9's zero-LLM-dependency guarantee.
+ */
+function deriveContentPreview(
+  type: NodeType,
+  utilityScore: number,
+  content: string,
+  sourceFile: string | null
+): string {
+  if (type === 'CONSTRAINT') {
+    return content;
+  }
+  if (utilityScore >= TIER2_MIN_UTILITY_SCORE) {
+    return excerptToTokenLimit(content, TIER2_EXCERPT_MAX_TOKENS);
+  }
+  return sourceFile ? `${type} in ${sourceFile}` : `${type}`;
 }
 
 /**
@@ -112,7 +190,7 @@ export function compileManifest(
 
   const rows = db
     .prepare(
-      `SELECT id, event_id, type, content, status, created_at
+      `SELECT id, event_id, type, content, status, source_file, created_at
        FROM graph_nodes
        WHERE status = 'ACTIVE'
        ORDER BY event_id ASC`
@@ -130,12 +208,15 @@ export function compileManifest(
       constraintPriority,
     });
 
+    const contentPreview = deriveContentPreview(row.type, utilityScore, row.content, row.source_file);
+
     return {
       id: row.id,
       type: row.type,
       status: row.status,
       utilityScore,
-      tokenCost: countTokens(row.content),
+      contentPreview,
+      tokenCost: countTokens(contentPreview),
     };
   });
 

@@ -33,6 +33,7 @@ describe('compiler/greedy-packing — Phase 8.4', () => {
     type: 'CONSTRAINT',
     status: 'ACTIVE',
     utilityScore: 0.01,
+    contentPreview: 'always use TypeScript strict mode',
     tokenCost: 20,
   };
   const C2: PackableNode = {
@@ -40,6 +41,7 @@ describe('compiler/greedy-packing — Phase 8.4', () => {
     type: 'CONSTRAINT',
     status: 'SUPERSEDED',
     utilityScore: 999,
+    contentPreview: 'stale superseded constraint, should never appear',
     tokenCost: 999,
   };
   const R1: PackableNode = {
@@ -47,6 +49,7 @@ describe('compiler/greedy-packing — Phase 8.4', () => {
     type: 'FILE_STATE',
     status: 'REJECTED',
     utilityScore: 999,
+    contentPreview: 'an old rejected file state, should never appear',
     tokenCost: 1,
   };
   const A: PackableNode = {
@@ -54,6 +57,7 @@ describe('compiler/greedy-packing — Phase 8.4', () => {
     type: 'FILE_STATE',
     status: 'ACTIVE',
     utilityScore: 9,
+    contentPreview: 'export function add(a: number, b: number): number { return a + b; }',
     tokenCost: 10,
   };
   const E: PackableNode = {
@@ -61,6 +65,7 @@ describe('compiler/greedy-packing — Phase 8.4', () => {
     type: 'FILE_STATE',
     status: 'ACTIVE',
     utilityScore: 4,
+    contentPreview: 'npm test passed',
     tokenCost: 10,
   };
   const B: PackableNode = {
@@ -68,6 +73,7 @@ describe('compiler/greedy-packing — Phase 8.4', () => {
     type: 'FILE_STATE',
     status: 'ACTIVE',
     utilityScore: 2,
+    contentPreview: 'FILE_STATE in src/b.ts',
     tokenCost: 20,
   };
   const F: PackableNode = {
@@ -75,6 +81,7 @@ describe('compiler/greedy-packing — Phase 8.4', () => {
     type: 'FILE_STATE',
     status: 'ACTIVE',
     utilityScore: 0.5,
+    contentPreview: 'FILE_STATE in src/f.ts',
     tokenCost: 10,
   };
 
@@ -114,6 +121,7 @@ describe('compiler/greedy-packing — Phase 8.4', () => {
       type: 'FILE_STATE',
       status: 'ACTIVE',
       utilityScore: 0,
+      contentPreview: '',
       tokenCost: 0,
     };
     const result = packByGreedyRatio([zeroCost, A, E, B, F], BUDGET);

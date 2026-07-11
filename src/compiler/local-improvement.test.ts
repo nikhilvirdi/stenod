@@ -16,7 +16,14 @@ import { applyLocalImprovementPass } from './local-improvement.js';
  */
 describe('compiler/local-improvement — Phase 8.5', () => {
   function node(id: string, utilityScore: number, tokenCost: number): PackableNode {
-    return { id, type: 'FILE_STATE', status: 'ACTIVE', utilityScore, tokenCost };
+    return {
+      id,
+      type: 'FILE_STATE',
+      status: 'ACTIVE',
+      utilityScore,
+      contentPreview: `content for ${id}`,
+      tokenCost,
+    };
   }
 
   // ── End-to-end: a deliberately suboptimal-for-greedy fixture ────────────
@@ -72,6 +79,7 @@ describe('compiler/local-improvement — Phase 8.5', () => {
       type: 'CONSTRAINT',
       status: 'ACTIVE',
       utilityScore: 0.01,
+      contentPreview: 'content for C',
       tokenCost: 5,
     } as const;
     const A = node('A', 10, 5);
@@ -138,6 +146,7 @@ describe('compiler/local-improvement — Phase 8.5', () => {
       type: 'CONSTRAINT',
       status: 'ACTIVE',
       utilityScore: 0,
+      contentPreview: 'content for C',
       tokenCost: 5,
     } as const;
     const input: GreedyPackResult = {

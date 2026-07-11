@@ -53,8 +53,26 @@ describe('delivery/clipboard — Phase 9.1 (mocked clipboardy)', () => {
 
   it('writes the JSON-serialized compiled manifest to clipboardy.write', async () => {
     const manifest: CompiledManifest = {
-      primacyZone: [{ id: 'C1', type: 'CONSTRAINT', status: 'ACTIVE', utilityScore: 1, tokenCost: 5 }],
-      middleZone: [{ id: 'A', type: 'FILE_STATE', status: 'ACTIVE', utilityScore: 0.5, tokenCost: 10 }],
+      primacyZone: [
+        {
+          id: 'C1',
+          type: 'CONSTRAINT',
+          status: 'ACTIVE',
+          utilityScore: 1,
+          contentPreview: 'always use TypeScript strict mode',
+          tokenCost: 5,
+        },
+      ],
+      middleZone: [
+        {
+          id: 'A',
+          type: 'FILE_STATE',
+          status: 'ACTIVE',
+          utilityScore: 0.5,
+          contentPreview: 'FILE_STATE in src/a.ts',
+          tokenCost: 10,
+        },
+      ],
       recencyZone: {
         resumeInstruction: 'pick up where you left off',
         nextActions: { message: 'fix the build' },

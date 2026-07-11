@@ -63,7 +63,15 @@ describe('compiler/determinism — Phase 8.8', () => {
     tokenCost: number,
     overrides: Partial<PackableNode> = {}
   ): PackableNode {
-    return { id, type: 'FILE_STATE', status: 'ACTIVE', utilityScore, tokenCost, ...overrides };
+    return {
+      id,
+      type: 'FILE_STATE',
+      status: 'ACTIVE',
+      utilityScore,
+      contentPreview: `content for ${id}`,
+      tokenCost,
+      ...overrides,
+    };
   }
 
   function constraint(id: string, utilityScore = 1, tokenCost = 5): PackableNode {
