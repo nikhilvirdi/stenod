@@ -23,6 +23,8 @@
     "clipboardy": "^5.3.1",
     "commander": "^15.0.0",
     "gpt-tokenizer": "^2.1.2",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "mockttp": "^4.4.2",
     "node-forge": "^1.4.0",
     "node-pty": "1.1.0",
     "tree-sitter-javascript": "^0.25.0",
