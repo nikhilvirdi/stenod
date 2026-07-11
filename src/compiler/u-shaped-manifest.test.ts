@@ -14,11 +14,25 @@ import type { LocalImprovementResult } from './local-improvement.js';
  */
 describe('compiler/u-shaped-manifest — Phase 8.6', () => {
   function constraint(id: string): PackableNode {
-    return { id, type: 'CONSTRAINT', status: 'ACTIVE', utilityScore: 1, tokenCost: 5 };
+    return {
+      id,
+      type: 'CONSTRAINT',
+      status: 'ACTIVE',
+      utilityScore: 1,
+      contentPreview: `content for ${id}`,
+      tokenCost: 5,
+    };
   }
 
   function fileState(id: string): PackableNode {
-    return { id, type: 'FILE_STATE', status: 'ACTIVE', utilityScore: 1, tokenCost: 5 };
+    return {
+      id,
+      type: 'FILE_STATE',
+      status: 'ACTIVE',
+      utilityScore: 1,
+      contentPreview: `content for ${id}`,
+      tokenCost: 5,
+    };
   }
 
   function packResult(included: PackableNode[]): LocalImprovementResult {

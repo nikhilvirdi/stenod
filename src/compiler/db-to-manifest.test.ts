@@ -6,6 +6,7 @@ import Database from 'better-sqlite3';
 import { openDatabase, runMigrations } from '../storage/index.js';
 import { compileManifest } from './db-to-manifest.js';
 import type { CompileManifestParams } from './db-to-manifest.js';
+import { countTokens } from './tokenizer.js';
 
 /**
  * Phase 8.9 — DB-to-Manifest Orchestrator Tests
@@ -36,6 +37,7 @@ describe('compiler/db-to-manifest — Phase 8.9', () => {
       content: string;
       status?: string;
       constraintKey?: string | null;
+      sourceFile?: string | null;
       createdAt?: number;
     }
   ): void {
@@ -43,7 +45,7 @@ describe('compiler/db-to-manifest — Phase 8.9', () => {
       .prepare(
         `INSERT INTO graph_nodes
            (id, event_id, type, content, fsm_state, constraint_key, status, source_file, created_at)
-         VALUES (?, ?, ?, ?, 'IDE_IDLE', ?, ?, NULL, ?)`
+         VALUES (?, ?, ?, ?, 'IDE_IDLE', ?, ?, ?, ?)`
       )
       .run(
         opts.id,
@@ -52,6 +54,7 @@ describe('compiler/db-to-manifest — Phase 8.9', () => {
         opts.content,
         opts.constraintKey ?? null,
         opts.status ?? 'ACTIVE',
+        opts.sourceFile ?? null,
         opts.createdAt ?? NOW
       );
   }
@@ -201,5 +204,150 @@ describe('compiler/db-to-manifest — Phase 8.9', () => {
 
     expect(manifest.primacyZone.map((n) => n.id)).toEqual(['C-force']);
     expect(manifest.middleZone).toEqual([]);
+  });
+
+  describe('Phase 8.10 — Tiered Content Inclusion Fix', () => {
+    /** Deterministic content guaranteed to tokenize to well over 300 tokens. */
+    function longContent(): string {
+      return Array.from({ length: 500 }, (_, i) => `line ${i}: const value${i} = ${i};`).join('\n');
+    }
+
+    it('CONSTRAINT nodes carry full, uncapped content regardless of length', () => {
+      const conn = freshDb();
+      const content = longContent();
+      expect(countTokens(content)).toBeGreaterThan(300);
+
+      insertNode(conn, { id: 'C-long', eventId: 1, type: 'CONSTRAINT', content, createdAt: NOW });
+
+      const manifest = compileManifest(conn, 100_000, {
+        resumeInstruction: 'resume',
+        fsmState: 'IDE_IDLE',
+        nowMs: NOW,
+      });
+
+      const node = manifest.primacyZone.find((n) => n.id === 'C-long');
+      expect(node!.contentPreview).toBe(content);
+      expect(node!.tokenCost).toBe(countTokens(content));
+    });
+
+    it('a node with utilityScore >= 0.6 carries a bounded excerpt, capped at 300 tokens', () => {
+      const conn = freshDb();
+      const content = longContent();
+      expect(countTokens(content)).toBeGreaterThan(300);
+
+      insertNode(conn, { id: 'HIGH', eventId: 1, type: 'FILE_STATE', content, createdAt: NOW });
+      insertNode(conn, { id: 'OTHER', eventId: 2, type: 'FILE_STATE', content: 'unrelated', createdAt: NOW });
+      // One edge -> causal_centrality=1 -> with decay(0)=1 (fresh node, nowMs
+      // matches createdAt) utilityScore = 0.4*1 + 0.4*1 + 0.2*0 = 0.8 >= 0.6,
+      // genuinely qualifying this node for tier 2, not asserted by fiat.
+      insertEdge(conn, 'e-centrality', 'HIGH', 'OTHER', 'CAUSED_BY');
+
+      const manifest = compileManifest(conn, 100_000, {
+        resumeInstruction: 'resume',
+        fsmState: 'IDE_IDLE',
+        nowMs: NOW,
+      });
+
+      const node = [...manifest.primacyZone, ...manifest.middleZone].find((n) => n.id === 'HIGH');
+      expect(node!.utilityScore).toBeGreaterThanOrEqual(0.6);
+      expect(node!.contentPreview).not.toBe(content); // truncated, not full
+      expect(content.startsWith(node!.contentPreview)).toBe(true); // a genuine prefix excerpt
+      expect(countTokens(node!.contentPreview)).toBeLessThanOrEqual(300);
+      expect(node!.tokenCost).toBe(countTokens(node!.contentPreview));
+    });
+
+    it('a utilityScore >= 0.6 node whose content is already under 300 tokens is included in full, unmodified', () => {
+      const conn = freshDb();
+      const content = 'export const x = 1;';
+
+      insertNode(conn, { id: 'SHORT-HIGH', eventId: 1, type: 'FILE_STATE', content, createdAt: NOW });
+      insertNode(conn, { id: 'OTHER', eventId: 2, type: 'FILE_STATE', content: 'unrelated', createdAt: NOW });
+      insertEdge(conn, 'e-centrality', 'SHORT-HIGH', 'OTHER', 'CAUSED_BY');
+
+      const manifest = compileManifest(conn, 100_000, {
+        resumeInstruction: 'resume',
+        fsmState: 'IDE_IDLE',
+        nowMs: NOW,
+      });
+
+      const node = [...manifest.primacyZone, ...manifest.middleZone].find((n) => n.id === 'SHORT-HIGH');
+      expect(node!.utilityScore).toBeGreaterThanOrEqual(0.6);
+      expect(node!.contentPreview).toBe(content);
+      expect(node!.tokenCost).toBe(countTokens(content));
+    });
+
+    it('nodes below the 0.6 threshold carry a deterministic one-line template, referencing source_file when present', () => {
+      const conn = freshDb();
+
+      insertNode(conn, {
+        id: 'LOW-WITH-FILE',
+        eventId: 1,
+        type: 'FILE_STATE',
+        content: 'this raw content must not appear in the manifest',
+        sourceFile: 'src/foo.ts',
+        createdAt: NOW,
+      });
+      insertNode(conn, {
+        id: 'LOW-NO-FILE',
+        eventId: 2,
+        type: 'TERMINAL_SUCCESS',
+        content: 'this raw content must not appear either',
+        createdAt: NOW,
+      });
+
+      const manifest = compileManifest(conn, 100_000, {
+        resumeInstruction: 'resume',
+        fsmState: 'IDE_IDLE',
+        nowMs: NOW,
+      });
+
+      const withFile = manifest.middleZone.find((n) => n.id === 'LOW-WITH-FILE');
+      const noFile = manifest.middleZone.find((n) => n.id === 'LOW-NO-FILE');
+
+      expect(withFile!.utilityScore).toBeLessThan(0.6);
+      expect(withFile!.contentPreview).toBe('FILE_STATE in src/foo.ts');
+      expect(withFile!.tokenCost).toBe(countTokens('FILE_STATE in src/foo.ts'));
+
+      expect(noFile!.utilityScore).toBeLessThan(0.6);
+      expect(noFile!.contentPreview).toBe('TERMINAL_SUCCESS');
+      expect(noFile!.tokenCost).toBe(countTokens('TERMINAL_SUCCESS'));
+
+      // Neither node's raw content leaked into the manifest.
+      expect(JSON.stringify(manifest)).not.toContain('raw content');
+    });
+
+    it('token_cost reflects the emitted contentPreview, not raw content size, across all three tiers', () => {
+      const conn = freshDb();
+      const longRaw = longContent();
+
+      insertNode(conn, { id: 'C', eventId: 1, type: 'CONSTRAINT', content: longRaw, createdAt: NOW });
+      insertNode(conn, { id: 'MID', eventId: 2, type: 'FILE_STATE', content: longRaw, createdAt: NOW });
+      insertNode(conn, {
+        id: 'LOW',
+        eventId: 3,
+        type: 'FILE_STATE',
+        content: longRaw,
+        createdAt: NOW - 1_000_000, // old -> low decay -> tier 3
+      });
+      insertEdge(conn, 'e1', 'MID', 'C', 'CAUSED_BY'); // gives MID centrality=1 -> tier 2
+
+      const manifest = compileManifest(conn, 100_000, {
+        resumeInstruction: 'resume',
+        fsmState: 'IDE_IDLE',
+        nowMs: NOW,
+      });
+
+      const all = [...manifest.primacyZone, ...manifest.middleZone];
+      expect(all.map((n) => n.id).sort()).toEqual(['C', 'LOW', 'MID']);
+      const rawTokenCost = countTokens(longRaw);
+
+      for (const n of all) {
+        expect(n.tokenCost).toBe(countTokens(n.contentPreview));
+        if (n.id !== 'C') {
+          // Tier 2/3 nodes must cost strictly less than the raw content would.
+          expect(n.tokenCost).toBeLessThan(rawTokenCost);
+        }
+      }
+    });
   });
 });
