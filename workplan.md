@@ -141,12 +141,13 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 8.1 | Token counting integration | 1.6 | Verified |
 | 8.2 | Utility score calculation | 3.2 | Verified |
 | 8.3 | Causal centrality (in/out-degree) | 1.6 | Verified |
-| 8.4 | Greedy-by-ratio packing | 8.1, 8.2, 8.3 | Verified |
-| 8.5 | Local improvement pass | 8.4 | Verified |
-| 8.6 | U-shaped output structuring | 8.5 | Verified |
+| 8.4 | Greedy-by-ratio packing | 8.1, 8.2, 8.3 | Built (unverified) — reverted per regression-guard rule, PackableNode type changed by Phase 8.10 (contentPreview field added). Original packing logic itself unmodified; needs re-verification that tests still reflect correct behavior post-8.10. |
+| 8.5 | Local improvement pass | 8.4 | Built (unverified) — reverted per regression-guard rule, same PackableNode dependency as 8.4. |
+| 8.6 | U-shaped output structuring | 8.5 | Built (unverified) — reverted per regression-guard rule, consumes PackableNode[] though not directly modified by 8.10. |
 | 8.7 | "Next Actions" block generation | 8.6, 3.1 | Verified |
 | 8.8 | Compiler correctness/determinism tests | 8.7 | Verified |
-| 8.9 | DB-to-manifest orchestrator | 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7 | Verified |
+| 8.9 | DB-to-manifest orchestrator | 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7 | Built (unverified) — reverted per regression-guard rule, db-to-manifest.ts directly modified by Phase 8.10 (tiering logic added). |
+| 8.10 | Tiered content inclusion fix | 8.9 | Not Started |
 | 9.1 | Clipboard delivery | 8.9 | Verified |
 | 9.2 | `manifest_log` write on handoff | 9.1 | Verified |
 | 9.3 | `--worked` / `--failed` feedback tagging | 9.2 | Verified |
@@ -662,6 +663,42 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 - **Verify:** integration test using a real (temp-file or in-memory)
   SQLite DB, seeded with a realistic mix of node types/statuses/edges,
   run twice, diff output byte-for-byte.
+
+---
+
+#### Phase 8.10 — Tiered Content Inclusion Fix
+- **Depends on:** 8.9
+- **SSOT ref:** §6.4 (Tiered content inclusion)
+- **Build:** extend `PackableNode` to carry a `contentPreview: string`
+  field, populated per the three-tier rule in SSOT §6.4. Update
+  `db-to-manifest.ts` to stop discarding `row.content` after computing
+  `tokenCost` — apply the tiering there. `token_cost` must reflect the
+  actual emitted content size (post-tiering), not the raw content size.
+- **Do NOT:** add new node types, call any LLM/summarization service,
+  or make the 0.6 threshold configurable — it's a fixed constant.
+- **Regression guard:** this touches `PackableNode`'s type (Phase 8.4),
+  `u-shaped-manifest.ts` (8.6), `db-to-manifest.ts` (8.9), and
+  potentially `clipboard.ts` (9.1) and `src/mcp/server.ts` (13.1) if
+  they assume the old shape. Per the regression-guard rule, revert
+  8.4, 8.5, 8.6, 8.9, and 9.1 to `Built (unverified)` once this phase's
+  changes land, and re-verify all of them in dependency order before
+  re-verifying this phase itself.
+- **Done when:**
+  - [ ] CONSTRAINT nodes carry full, uncapped content
+  - [ ] Nodes with utilityScore >= 0.6 carry a bounded excerpt (≤300
+        tokens)
+  - [ ] Nodes below that threshold carry a one-line deterministic
+        summary (template-based, not LLM-generated)
+  - [ ] token_cost reflects the actual emitted content per node, not
+        raw content size
+  - [ ] Existing Phase 8.4/8.5 packing tests still pass with updated
+        fixtures reflecting real content
+  - [ ] src/mcp/server.test.ts's failing assertion now passes for the
+        real reason (content is present), not by weakening the
+        assertion
+- **Verify:** re-run the full Milestone 8/9 test suites plus 13.1's
+  test, confirm token budgets are still respected, confirm a real
+  manifest sample reads like a briefing, not a raw dump.
 
 ---
 
