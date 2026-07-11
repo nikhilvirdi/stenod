@@ -14,6 +14,13 @@ import { deriveCurrentFsmState, deriveUnresolvedErrorContext } from './handoff-c
 import { rejectSince } from '../lifecycle/index.js';
 import { anchorConstraint } from './anchor.js';
 import { runMcpServer } from '../mcp/index.js';
+import {
+  enableNetworkCapture,
+  stopNetworkCapture,
+  PROVIDER_ALLOWLIST,
+  UnsupportedPlatformError,
+} from '../network/index.js';
+import type { NetworkCaptureHandle } from '../network/index.js';
 /**
  * Polls until the Phase 2.1 PID lock file at `lockPath` disappears (i.e. the
  * daemon that owned it has released it via `detachWorkspace()` inside
@@ -340,8 +347,73 @@ program
 program
   .command('enable-network-capture')
   .description('Opt in to the AI-provider network capture tier (installs local CA, starts proxy)')
-  .action(() => {
-    console.log('Not yet implemented');
+  .action(async () => {
+    const root = process.cwd();
+    if (!existsSync(stenoDir(root))) {
+      console.error(`stenod: no Stenod workspace found at ${root} — run \`stenod init\` first.`);
+      process.exitCode = 1;
+      return;
+    }
+
+    console.log('stenod: enabling the opt-in AI-provider network capture tier. This will:');
+    console.log('  1. Generate a local root CA and install it into your OS trust store');
+    console.log('     (per-user only — no admin/sudo, no System-wide trust).');
+    console.log('  2. Start a local HTTPS proxy that intercepts traffic to known AI-provider');
+    console.log(`     domains only (${PROVIDER_ALLOWLIST.join(', ')}) — everything else passes`);
+    console.log('     through untouched and unlogged.');
+    console.log("  3. Record captured AI-provider responses into this project's causal graph.");
+    console.log('This installs a certificate your system will trust — a real trust decision.');
+    console.log('Run `stenod disable-network-capture` at any time to fully revert it.');
+    console.log('');
+
+    let handle: NetworkCaptureHandle;
+    try {
+      handle = await enableNetworkCapture(root);
+    } catch (err) {
+      if (err instanceof UnsupportedPlatformError) {
+        console.error(err.message);
+      } else if (err instanceof Error) {
+        console.error(err.message);
+      } else {
+        console.error(String(err));
+      }
+      process.exitCode = 1;
+      return;
+    }
+
+    console.log(`Root CA installed at: ${handle.ca.certPath}`);
+    console.log(
+      `Trust store install: ${handle.trustStoreResult.success ? 'succeeded' : 'FAILED'} ` +
+        `(platform: ${handle.trustStoreResult.platform}).`
+    );
+    if (!handle.trustStoreResult.success) {
+      console.error(
+        'stenod: trust store install failed — TLS clients will likely reject this CA. ' +
+          (handle.trustStoreResult.stderr || '(no stderr output)')
+      );
+    }
+    console.log(`Proxy listening at: ${handle.proxy.server.url}`);
+    console.log('Point your shell/AI tool at the proxy by setting:');
+    console.log(`  HTTP_PROXY=${handle.proxy.server.url}`);
+    console.log(`  HTTPS_PROXY=${handle.proxy.server.url}`);
+    console.log('Press Ctrl+C to stop capturing.');
+
+    let shuttingDown = false;
+    const shutdown = async (): Promise<void> => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      try {
+        await stopNetworkCapture(handle);
+        console.log('stenod: network capture stopped.');
+        process.exit(0);
+      } catch (err) {
+        console.error((err as Error).message);
+        process.exit(1);
+      }
+    };
+
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
   });
 
 program
