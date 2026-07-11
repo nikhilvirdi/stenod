@@ -185,6 +185,38 @@ This is a standard, cheap heuristic upgrade to plain greedy — no O(n²·1/ε) 
 
 **Output structure (U-shaped):** constraints (primacy zone) → packed causal graph (middle) → exact resume instruction plus the "Next Actions" block, derived from the FSM's current unresolved state (recency zone).
 
+**Tiered content inclusion (bug fix, post-Phase 8.9):** the original
+implementation computed `token_cost` from a node's real `content` but
+never attached that content to the packed output — every packed node
+carried only `{id, type, status, utilityScore, tokenCost}`. This meant
+the compiled manifest, while structurally correct, contained no actual
+resumable information — no file diffs, no error text, no decisions.
+Fixed via three fixed, deterministic content tiers, applied at pack
+time:
+
+1. **`CONSTRAINT` nodes** — full `content`, uncapped. These are
+   force-included regardless of score (existing behavior) and are
+   naturally short (a rule or decision line), so no truncation is
+   needed.
+2. **Nodes with `utilityScore >= 0.6`** — a bounded excerpt of
+   `content`, capped at 300 tokens. `0.6` is a fixed constant, not
+   adaptive, consistent with this system's static-λ determinism
+   principle (§6.4's `λ1/λ2/λ3`).
+3. **All other packed nodes** (`utilityScore < 0.6`) — a one-line
+   deterministic summary, not raw content: a template string of the
+   form `"{type} in {source_file}"` (or `"{type}"` if `source_file` is
+   null), not an LLM-generated summary. This preserves the project's
+   zero-LLM-dependency guarantee (§9) — summarization here means
+   truncation/templating, never inference.
+
+This changes `token_cost` calculation to reflect the tier actually
+emitted (Tier 2/3 nodes cost less than their raw content would, since
+only the excerpt/summary is included) — the packing algorithm's ratio
+math (§6.4) is otherwise unaffected; it still packs by `v_i /
+token_cost` and respects the same overall token budget as before. The
+budget ceiling itself does not change; only how each node's slice of
+that budget is allocated does.
+
 ### 6.5 Delivery
 
 Clipboard copy is the guaranteed path — zero dependency on anything being reachable, the entire point of the project. The optional MCP exposure is convenience only, and must degrade gracefully to clipboard-only if unavailable. Every compiled manifest is logged (`manifest_log`) before delivery.
@@ -201,6 +233,7 @@ Clipboard copy is the guaranteed path — zero dependency on anything being reac
 | Terminal wrapping | `node-pty` | Standard PTY wrapper with backpressure support |
 | Storage | SQLite3, WAL mode | Zero-ops embedded database; WAL gives crash-safe concurrent reads/writes without a server process |
 | Token counting | `gpt-tokenizer` (or equivalent offline tokenizer) | Fully local, no network call, keeps the offline guarantee intact |
+| MCP server library | `@modelcontextprotocol/sdk` | Official SDK, standard choice consistent with the project's existing preference for official/standard libraries over alternatives |
 | Network capture (opt-in) | Local HTTPS interception proxy + local CA | Generalizes to any tool making outbound HTTPS calls, not just a browser tab — same technique as mitmproxy/Charles |
 | IPC | Unix Domain Socket (Linux/Mac), Named Pipe (Windows) | Standard local IPC, no network exposure |
 | Process supervision | systemd (Linux), launchd (Mac) | Standard daemon auto-restart, no custom supervisor needed |
@@ -293,3 +326,4 @@ A record of every material correction made during design, kept here so an AI cod
 | CLI/package name never checked against real registries | Checked live: `mnemo`/`mnemosyne` taken (unrelated, low-activity); deeper research found a genuine product collision (Mnemosyne Neural OS) — project renamed to **Stenod**, confirmed available |
 | Phase 8.8's determinism test covered only the in-memory packing pipeline (8.4–8.7), correctly per each phase's own scope — but no Milestone 8 phase ever specified building the DB-to-pipeline orchestrator, leaving genuine end-to-end determinism (including SQLite fetch ordering) untested | Added Phase 8.9 (DB-to-manifest orchestrator) with an explicit `ORDER BY` requirement; Phase 9.1's dependency updated from 8.8 to 8.9 |
 | Phase 10.3 `start` and `stop` originally envisioned as purely in-memory | Required cross-process coordination since CLI invocations are discrete processes. `start` daemonizes into background using `child_process.spawn({ detached: true })`; `stop` uses OS signals (SIGTERM) routed via PID lock file |
+| Phase 8.9's `PackableNode`/`CompiledManifest` types never carried node `content` — only metadata (id/type/status/score/tokenCost) — so every downstream phase (8.4–8.9, 9.1, 12.3, 13.1) faithfully packed and delivered manifests with no actual resumable text, defeating the project's core purpose per §3 | Fixed via tiered content inclusion: full content for CONSTRAINT nodes, bounded excerpt for utilityScore >= 0.6, deterministic one-line summary otherwise. See §6.4. |
