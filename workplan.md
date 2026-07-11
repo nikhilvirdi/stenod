@@ -120,7 +120,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 3.3 | LWW conflict resolution | 3.1 | Verified |
 | 3.4 | Time-windowed rejection logic | 3.1 | Verified |
 | 3.5 | Anti-rot timeout logic | 3.1 | Verified |
-| 4.1 | chokidar watcher + ignore-list | 2.3, 3.1 | Verified — regression fixed (.stenod/ self-watch bug) |
+| 4.1 | chokidar watcher + ignore-list | 2.3, 3.1 | Verified ï¿½ regression fixed (.stenod/ self-watch bug) |
 | 4.2 | web-tree-sitter integration (JS/TS) | 4.1 | Verified |
 | 4.3 | Constraint comment syntax parser | 4.2 | Verified |
 | 4.4 | `FILE_STATE` node creation + graph write | 4.2, 3.1 | Verified |
@@ -134,7 +134,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 6.2 | Backpressure/overflow disk-spill handling | 6.1 | Verified |
 | 6.3 | Burst-load integration test | 6.2 | Verified |
 | 7.1 | `stenod init` (sandbox + token + service unit) | 2.2 | Verified |
-| 7.2 | `stenod start` / `stenod stop` | 6.3, 7.1 | Verified — daemon is fs-only pending Gap 3 (regression fixed) |
+| 7.2 | `stenod start` / `stenod stop` | 6.3, 7.1 | Verified ï¿½ daemon is fs-only pending Gap 3 (regression fixed) |
 | 7.3 | `stenod status` | 7.2 | Verified |
 | 7.4 | Crash recovery validation | 7.2 | Blocked (Requires Unix host) |
 | 8.1 | Token counting integration | 1.6 | Verified |
@@ -155,11 +155,12 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 10.4 | Wire `stenod handoff` (+worked/failed) | 10.3, 9.3 | Verified |
 | 10.5 | Wire `stenod reject --since` | 10.4, 3.4 | Verified |
 | 10.6 | Wire `stenod anchor` | 10.4 | Verified |
-| 10.7 | Full end-to-end integration test | 10.6 | Verified — Gap 4 fixed at root cause, re-verified |
+| 10.7 | Full end-to-end integration test | 10.6 | Verified ï¿½ Gap 4 fixed at root cause, re-verified |
 | 11.1 | Identifier extraction utility | 10.7 | Verified |
 | 11.2 | Exact-identifier recall calculator | 11.1 | Verified |
-| 11.3 | Dev-only evaluation harness script | 11.2 | Not Started |
-| 12.1 | Local CA generation + trust store install | 10.7 | Not Started |
+| 11.3 | Dev-only evaluation harness script | 11.2 | Verified |
+
+| 12.1 | Local CA generation + trust store install | 10.7 | Built (unverified) â€” cert generation fully verified on this host (cross-checked via node:crypto and node-forge). Trust-store install/verify command *construction* is unit-tested for linux/darwin (exact argv asserted); no real OS-level install+query has been executed on any platform yet. Two structurally different gaps, not one: (1) **Linux** â€” CI (ci.yml, ubuntu-latest) ships `libnss3-tools`/`certutil` preinstalled and could genuinely execute this for real; no such test exists yet, and WORKPLAN's own 12.1 Verify line calls for "manual OS trust store inspection" rather than CI automation here â€” automated OS-level coverage is Phase 12.5's mandate ("full enable/disable/enable integration test with OS-level trust store checks"). (2) **macOS** â€” ci.yml runs `ubuntu-latest` only, by deliberate design (its own header comment: a macOS/Windows matrix "would be misleading about what is actually portable today"); no macOS runner exists in this pipeline at any phase, so macOS trust-store behavior cannot be verified by *any* automated system here, ever, regardless of what tests are written â€” only manual execution on a real Mac can confirm it, and that has not been done. |
 | 12.2 | Local HTTPS proxy + provider allowlist | 12.1 | Not Started |
 | 12.3 | SSE `.tee()` + `PROVIDER_CAPTURE` node creation | 12.2 | Not Started |
 | 12.4 | Wire `stenod enable-network-capture` | 12.3 | Not Started |

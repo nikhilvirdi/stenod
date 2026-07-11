@@ -13,7 +13,8 @@
     "lint": "eslint src",
     "format:check": "prettier --check src",
     "format:write": "prettier --write src",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "evaluate": "npm run build && node dist/evaluation/run-eval.js"
   },
   "license": "MIT",
   "dependencies": {
@@ -22,6 +23,7 @@
     "clipboardy": "^5.3.1",
     "commander": "^15.0.0",
     "gpt-tokenizer": "^2.1.2",
+    "node-forge": "^1.4.0",
     "node-pty": "1.1.0",
     "tree-sitter-javascript": "^0.25.0",
     "tree-sitter-typescript": "^0.23.2",
