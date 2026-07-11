@@ -6,8 +6,10 @@ import { spawnSync } from 'node:child_process';
 import {
   buildInstallCommand,
   buildVerifyCommand,
+  buildUninstallCommand,
   installTrustStore,
   verifyTrustStoreInstall,
+  uninstallTrustStore,
   UnsupportedPlatformError,
 } from './trust-store.js';
 import { generateRootCa, ROOT_CA_COMMON_NAME } from './ca.js';
@@ -162,6 +164,45 @@ describe('network/trust-store — Phase 12.1', () => {
     });
   });
 
+  describe('buildUninstallCommand()', () => {
+    it('builds the macOS delete-certificate command against the login keychain', () => {
+      const result = buildUninstallCommand({ platform: 'darwin', homeDir: FAKE_HOME_MAC });
+
+      expect(result).toEqual({
+        supported: true,
+        cmd: 'security',
+        args: [
+          'delete-certificate',
+          '-c',
+          ROOT_CA_COMMON_NAME,
+          join(FAKE_HOME_MAC, 'Library', 'Keychains', 'login.keychain-db'),
+        ],
+      });
+    });
+
+    it('builds the Linux NSS DB removal command', () => {
+      const result = buildUninstallCommand({ platform: 'linux', homeDir: FAKE_HOME_LINUX });
+
+      expect(result).toEqual({
+        supported: true,
+        cmd: 'certutil',
+        args: [
+          '-d',
+          `sql:${join(FAKE_HOME_LINUX, '.pki', 'nssdb')}`,
+          '-D',
+          '-n',
+          ROOT_CA_COMMON_NAME,
+        ],
+      });
+    });
+
+    it('reports win32 as unsupported', () => {
+      const result = buildUninstallCommand({ platform: 'win32', homeDir: 'C:\\Users\\dev' });
+
+      expect(result).toEqual({ supported: false, platform: 'win32' });
+    });
+  });
+
   describe('installTrustStore() / verifyTrustStoreInstall() — unsupported-platform behavior', () => {
     it('installTrustStore() throws UnsupportedPlatformError on win32 rather than attempting anything', () => {
       expect(() =>
@@ -172,6 +213,12 @@ describe('network/trust-store — Phase 12.1', () => {
     it('verifyTrustStoreInstall() throws UnsupportedPlatformError on win32 rather than attempting anything', () => {
       expect(() =>
         verifyTrustStoreInstall({ platform: 'win32', homeDir: 'C:\\Users\\dev' })
+      ).toThrow(UnsupportedPlatformError);
+    });
+
+    it('uninstallTrustStore() throws UnsupportedPlatformError on win32 rather than attempting anything', () => {
+      expect(() =>
+        uninstallTrustStore({ platform: 'win32', homeDir: 'C:\\Users\\dev' })
       ).toThrow(UnsupportedPlatformError);
     });
 
@@ -247,6 +294,28 @@ describe('network/trust-store — Phase 12.1', () => {
         const after = verifyTrustStoreInstall({ platform: 'linux', homeDir: scratchHome });
         expect(after.success).toBe(true);
         expect(after.stdout).toContain(ROOT_CA_COMMON_NAME);
+      });
+
+      it('uninstalls a previously installed CA from the scratch NSS DB and confirms removal via certutil query', () => {
+        const { certPem } = generateRootCa();
+        const certPath = join(scratchHome, 'rootCA.pem');
+        writeFileSync(certPath, certPem, 'utf8');
+
+        // Install it
+        const installed = installTrustStore(certPath, { platform: 'linux', homeDir: scratchHome });
+        expect(installed.success).toBe(true);
+
+        // Verify it is there
+        const beforeUninstall = verifyTrustStoreInstall({ platform: 'linux', homeDir: scratchHome });
+        expect(beforeUninstall.success).toBe(true);
+
+        // Uninstall it
+        const uninstalled = uninstallTrustStore({ platform: 'linux', homeDir: scratchHome });
+        expect(uninstalled.success).toBe(true);
+
+        // Verify it is gone
+        const afterUninstall = verifyTrustStoreInstall({ platform: 'linux', homeDir: scratchHome });
+        expect(afterUninstall.success).toBe(false);
       });
 
       it('does not affect the real per-user NSS DB — a second scratch DB is unaffected by the first install', () => {
