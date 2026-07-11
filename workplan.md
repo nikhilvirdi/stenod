@@ -141,13 +141,13 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 8.1 | Token counting integration | 1.6 | Verified |
 | 8.2 | Utility score calculation | 3.2 | Verified |
 | 8.3 | Causal centrality (in/out-degree) | 1.6 | Verified |
-| 8.4 | Greedy-by-ratio packing | 8.1, 8.2, 8.3 | Built (unverified) — reverted per regression-guard rule, PackableNode type changed by Phase 8.10 (contentPreview field added). Original packing logic itself unmodified; needs re-verification that tests still reflect correct behavior post-8.10. |
-| 8.5 | Local improvement pass | 8.4 | Built (unverified) — reverted per regression-guard rule, same PackableNode dependency as 8.4. |
-| 8.6 | U-shaped output structuring | 8.5 | Built (unverified) — reverted per regression-guard rule, consumes PackableNode[] though not directly modified by 8.10. |
+| 8.4 | Greedy-by-ratio packing | 8.1, 8.2, 8.3 | Verified — re-verified post-Phase 8.10 regression guard; packing algorithm unchanged, PackableNode's new contentPreview field transported inertly. Confirmed by Antigravity cold review + Supervisor test run (411 passed, 2 skipped, 0 failed). |
+| 8.5 | Local improvement pass | 8.4 | Verified — re-verified post-Phase 8.10 regression guard; swap logic inspects only utilityScore/tokenCost, unaffected by new field. |
+| 8.6 | U-shaped output structuring | 8.5 | Verified — re-verified post-Phase 8.10 regression guard; zone ordering semantics unchanged. |
 | 8.7 | "Next Actions" block generation | 8.6, 3.1 | Verified |
 | 8.8 | Compiler correctness/determinism tests | 8.7 | Verified |
-| 8.9 | DB-to-manifest orchestrator | 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7 | Built (unverified) — reverted per regression-guard rule, db-to-manifest.ts directly modified by Phase 8.10 (tiering logic added). |
-| 8.10 | Tiered content inclusion fix | 8.9 | Not Started |
+| 8.9 | DB-to-manifest orchestrator | 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7 | Verified — re-verified post-Phase 8.10; ORDER BY intact, CONSTRAINT force-inclusion intact, tiering logic (deriveContentPreview) confirmed correct, token_cost now derived from contentPreview not raw content. |
+| 8.10 | Tiered content inclusion fix | 8.9 | Verified — three fixed tiers (CONSTRAINT full content, utilityScore>=0.6 bounded 300-token excerpt, else deterministic template) confirmed correct and non-configurable. src/mcp/server.test.ts assertion now passes for genuine reason (real content flows through). Confirmed by Antigravity cold review + Supervisor test run (411 passed, 2 skipped, 0 failed). |
 | 9.1 | Clipboard delivery | 8.9 | Verified |
 | 9.2 | `manifest_log` write on handoff | 9.1 | Verified |
 | 9.3 | `--worked` / `--failed` feedback tagging | 9.2 | Verified |
