@@ -160,7 +160,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 11.2 | Exact-identifier recall calculator | 11.1 | Verified |
 | 11.3 | Dev-only evaluation harness script | 11.2 | Verified |
 | 12.1 | Local CA generation + trust store install | 10.7 | Verified — Linux real NSS execution confirmed via CI #63 (commit c4405db), both scratch-DB install/verify tests passed for real on ubuntu-latest. macOS trust-store behavior remains unverified by any automated system in this pipeline (deliberate ubuntu-only CI design); manual verification on a real Mac deferred to Phase 12.5. |
-| 12.2 | Local HTTPS proxy + provider allowlist | 12.1 | Not Started |
+| 12.2 | Local HTTPS proxy + provider allowlist | 12.1 | Verified — mockttp-based two-layer enforcement (TLS-layer tlsInterceptOnly + application-layer hostname check), verified via real CONNECT/TLS handshake tests, not plain HTTP. 3/3 new tests + full suite (398 passed, 2 skipped, 55/55 files) confirmed locally by Supervisor. Not yet wired into enable-network-capture (Phase 12.4). |
 | 12.3 | SSE `.tee()` + `PROVIDER_CAPTURE` node creation | 12.2 | Not Started |
 | 12.4 | Wire `stenod enable-network-capture` | 12.3 | Not Started |
 | 12.5 | Wire `stenod disable-network-capture` + uninstall test | 12.4 | Not Started |
