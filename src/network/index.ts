@@ -1,7 +1,9 @@
 // Network capture module boundary — Milestone 12 (opt-in AI-provider capture tier).
 // Phase 12.1: local CA generation + trust store install, as a standalone
-// capability. Not yet wired into the CLI (`enable-network-capture` is
-// Phase 12.4) or the proxy itself (Phase 12.2).
+// capability. Phase 12.2: local HTTPS proxy + provider allowlist, also
+// standalone. Phase 12.3: SSE `.tee()` + PROVIDER_CAPTURE node creation,
+// consuming Phase 12.2's `server`/`getCapturedRequests()` seams. None of
+// this is wired into the CLI yet — `enable-network-capture` is Phase 12.4.
 
 export { generateRootCa, persistRootCa, caDir, ROOT_CA_COMMON_NAME } from './ca.js';
 export type { GeneratedRootCa, PersistedRootCa } from './ca.js';
@@ -20,3 +22,14 @@ export type {
   UnsupportedTrustStoreCommand,
   TrustStoreCommandResult,
 } from './trust-store.js';
+
+export { createProviderCaptureProxy, PROVIDER_ALLOWLIST } from './proxy.js';
+export type {
+  ProxyCa,
+  CapturedProviderRequest,
+  ProviderCaptureProxyOptions,
+  ProviderCaptureProxy,
+} from './proxy.js';
+
+export { writeProviderCaptureNode, attachProviderCapture } from './provider-capture.js';
+export type { ProviderCaptureWriteResult, ProviderCaptureAttachment } from './provider-capture.js';
