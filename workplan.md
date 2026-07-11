@@ -89,6 +89,7 @@ Stated once here — phases reference this table rather than re-specifying, so t
 | Certificate generation (opt-in tier) | `node-forge` | 1.4.0 |
 | AST parsing | `web-tree-sitter` | 0.26.10 |
 | JS/TS grammars | `tree-sitter-javascript`, `tree-sitter-typescript` | 0.25.0 / 0.23.2 |
+| MCP server library | `@modelcontextprotocol/sdk` | 1.29.0 |
 | Linting / formatting | `eslint` + `@typescript-eslint`, `prettier` | latest at implementation time |
 
 All versions confirmed to exist on the npm registry at planning time (July 2026). Re-verify current versions at implementation time — don't assume these exact patch versions are still current, just that these are the correct packages.
@@ -161,7 +162,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 11.3 | Dev-only evaluation harness script | 11.2 | Verified |
 | 12.1 | Local CA generation + trust store install | 10.7 | Verified — Linux real NSS execution confirmed via CI #63 (commit c4405db), both scratch-DB install/verify tests passed for real on ubuntu-latest. macOS trust-store behavior remains unverified by any automated system in this pipeline (deliberate ubuntu-only CI design); manual verification on a real Mac deferred to Phase 12.5. |
 | 12.2 | Local HTTPS proxy + provider allowlist | 12.1 | Verified — mockttp-based two-layer enforcement (TLS-layer tlsInterceptOnly + application-layer hostname check), verified via real CONNECT/TLS handshake tests, not plain HTTP. 3/3 new tests + full suite (398 passed, 2 skipped, 55/55 files) confirmed locally by Supervisor. Not yet wired into enable-network-capture (Phase 12.4). |
-| 12.3 | SSE `.tee()` + `PROVIDER_CAPTURE` node creation | 12.2 | Not Started |
+| 12.3 | SSE `.tee()` + `PROVIDER_CAPTURE` node creation | 12.2 | Verified — mockttp's own architecture supplies the tee (untouched `thenPassThrough` caller path + separate passive `response` event to the daemon, correlated against Phase 12.2's `getCapturedRequests()` allowlist record); proxy.ts untouched. 6/6 new tests (byte-identical passthrough via Buffer.equals(), PROVIDER_CAPTURE node creation scoped to allowlisted domains only, FSM-state-unchanged) + full src/network suite (26 passed, 2 skipped, 4/4 files) confirmed locally by Supervisor; independently cold-reviewed and cross-checked by Antigravity. |
 | 12.4 | Wire `stenod enable-network-capture` | 12.3 | Not Started |
 | 12.5 | Wire `stenod disable-network-capture` + uninstall test | 12.4 | Not Started |
 | 13.1 | MCP resource exposure of handoff | 10.7 | Not Started |
