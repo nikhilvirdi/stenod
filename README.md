@@ -1,7 +1,8 @@
 # Stenod
 
-<img width="1280" height="640" alt="stenod (1)" src="https://github.com/user-attachments/assets/de2bdd63-0cb7-447a-a2cb-f1ac3525748d" />
-
+<p align="center">
+  <img width="480" alt="Stenod — a black box recorder for your AI coding sessions" src="https://github.com/user-attachments/assets/de2bdd63-0cb7-447a-a2cb-f1ac3525748d" />
+</p>
 
 A black box recorder for your AI coding sessions.
 
