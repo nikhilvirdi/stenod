@@ -1,6 +1,6 @@
 # Stenod — Architecture & Design
 
-This document explains what Stenod is, the problem it solves, how each part works, and the reasoning behind the major design decisions. It's the reference for anyone who wants to understand the system beyond the [README](./README.md) — how the capture layer, causal graph, compiler, and delivery path fit together, and why they were built the way they were.
+This document explains what Stenod is, the problem it solves, how each part works, and the reasoning behind the major design decisions. It's the reference for anyone who wants to understand the system beyond the [README](./README.md): how the capture layer, causal graph, compiler, and delivery path fit together, and why they were built this way.
 
 For install and usage, see the [README](./README.md). For exactly what's captured and the security posture, see [SECURITY.md](./SECURITY.md).
 
@@ -27,11 +27,11 @@ For install and usage, see the [README](./README.md). For exactly what's capture
 
 ## 1. The Problem
 
-AI-assisted coding sessions collapse at boundaries — rate limits, provider outages, context-window exhaustion, or a developer deliberately switching tools mid-task. What's lost at that moment isn't just chat history; it's the *reasoning*: which architectural decisions were made and why, which approaches were tried and rejected, which constraints are still active, and what the developer was mid-way through doing.
+AI-assisted coding sessions collapse at boundaries: rate limits, provider outages, context-window exhaustion, or a developer deliberately switching tools mid-task. What's lost at that moment isn't just chat history. It's the *reasoning* — which architectural decisions were made and why, which approaches were tried and rejected, which constraints are still active, and what the developer was in the middle of doing.
 
-This isn't hypothetical. Windsurf's move to quota-based billing in March 2026 caused documented user backlash specifically because developers got mid-session rate-limited and lost flow. The pain is current, not speculative.
+This isn't hypothetical. When Windsurf moved to quota-based billing in March 2026, the user backlash was documented and specific: developers got rate-limited mid-session and lost their flow. The pain is current, not speculative.
 
-**What existing tools save:** conversations. **What actually gets lost:** the intent behind the conversation.
+Existing tools save conversations. What actually gets lost is the intent behind the conversation.
 
 ---
 
@@ -48,19 +48,19 @@ This isn't hypothetical. Windsurf's move to quota-based billing in March 2026 ca
 | **Manual copy-paste** | Requires no tooling at all | No filtering of dead ends/failed experiments, no chronology, triggers "Lost in the Middle" degradation on large dumps |
 | **Git** | The actual system of record for code state | Captures *what changed*, not *why*, not which constraints are still active, not what was rejected and why |
 
-**The pattern:** every serious alternative is in-band — it shares a failure domain with the thing it's trying to help. None are built specifically around the moment the AI itself is unreachable.
+The pattern is consistent: every serious alternative is in-band. It shares a failure domain with the thing it's trying to help. None are built around the moment the AI itself is unreachable.
 
 ---
 
 ## 3. What Stenod Is
 
-Stenod is a local, deterministic, out-of-band daemon that captures the causal history of a coding session — file changes, terminal outcomes, and (optionally) AI-provider network traffic — and compiles it into an attention-structured Handoff Manifest the moment a developer needs to resume in any AI tool, including one they weren't previously using.
+Stenod is a local, deterministic, out-of-band daemon. It captures the causal history of a coding session — file changes, terminal outcomes, and optionally AI-provider network traffic — and compiles it into an attention-structured Handoff Manifest the moment a developer needs to resume in any AI tool, including one they weren't previously using.
 
-**The one sentence that matters:** *not a better memory service — a system that doesn't share a failure domain with the AI it's recording.*
+The one sentence that matters: it's *not a better memory service — it's a system that doesn't share a failure domain with the AI it's recording.*
 
-It is not pitched as "the first AI memory system" — that space is crowded and well-funded, as §2 shows. It is a precisely-scoped tool solving one real, underserved failure mode.
+It isn't pitched as "the first AI memory system." That space is crowded and well-funded, as §2 shows. Stenod is a narrowly-scoped tool for one real, underserved failure mode.
 
-The name comes from *stenographer* — someone who silently, exactly transcribes what happens for someone else to read later — and reads naturally as a Unix daemon name (`stenod`, in the tradition of `sshd`, `httpd`).
+The name comes from *stenographer* — someone who silently and exactly transcribes what happens for someone else to read later — and it reads naturally as a Unix daemon name (`stenod`, in the tradition of `sshd`, `httpd`).
 
 ---
 
@@ -69,7 +69,7 @@ The name comes from *stenographer* — someone who silently, exactly transcribes
 - **Two-tier capture:** zero-trust default (filesystem + terminal), explicit opt-in for AI-provider network capture.
 - **Causal graph storage** with typed edges (`REPLACES`, `CAUSED_BY`, `CONTRADICTS`, `DEPENDS_ON`) instead of a vector store.
 - **FSM-based intent classification** — distinguishes deliberate architectural decisions from panic fixes by state-transition pattern, not keyword heuristics.
-- **Last-Writer-Wins conflict resolution** — contradicting constraints are automatically resolved, not both silently injected into a future manifest.
+- **Last-Writer-Wins conflict resolution** — contradicting constraints are resolved automatically, rather than both being silently injected into a future manifest.
 - **Deterministic compiler** — greedy-by-ratio knapsack packing plus a local-improvement pass, with a forced primacy zone for constraints.
 - **U-shaped manifest structuring** — exploits transformer primacy/recency attention bias, citation-backed (Liu et al. *Lost in the Middle*, Xiao et al. *Attention Sinks*).
 - **"Next Actions" block** — surfaces the FSM's current unresolved state as an explicit next step, not just raw context.
@@ -86,7 +86,7 @@ The name comes from *stenographer* — someone who silently, exactly transcribes
 
 ## 5. Interfaces
 
-The CLI is the primary interface — there's no web dashboard, a deliberate scope choice.
+The CLI is the primary interface. There's no web dashboard, which is a deliberate scope choice.
 
 | Command | Purpose |
 |---|---|
@@ -105,7 +105,7 @@ The CLI is the primary interface — there's no web dashboard, a deliberate scop
 
 **Terminal capture note:** `stenod start` alone captures filesystem events only. Terminal capture requires running `stenod attach` in each interactive shell you want captured — the daemon runs detached and has no TTY of its own to spawn a shell into.
 
-**MCP convenience interface:** `stenod handoff` is also exposed as an MCP resource, so an already-reachable agent can pull the manifest directly rather than requiring a copy-paste. This is additive convenience only — the system always degrades gracefully to clipboard-only.
+**MCP convenience interface:** `stenod handoff` is also exposed as an MCP resource, so an already-reachable agent can pull the manifest directly instead of copy-pasting. This is additive convenience only; the system always degrades gracefully to clipboard-only.
 
 ---
 
@@ -115,31 +115,31 @@ The CLI is the primary interface — there's no web dashboard, a deliberate scop
 
 **Default tier (zero trust required):**
 
-- **Filesystem:** `chokidar` watches the project directory; on save, content is parsed by `web-tree-sitter` in a background thread (AST parse under ~10ms; explicit `tree.delete()`/`parser.delete()` in `finally` blocks prevents memory leaks). Excludes: `.env`, `.git/`, `node_modules/`, common build output dirs, anything the project's own `.gitignore` excludes, and binaries over 500KB.
-- **Terminal:** `node-pty` wraps the developer's shell (via `stenod attach`), batching output at 16ms intervals with a 64KB backpressure high-water mark (overflow spills to a temp file, stream pauses, resumes after flush). The success/failure signal is the **shell exit code** for commands that terminate — language-agnostic, doesn't depend on matching test-runner-specific output strings. Long-running processes that never exit within a session (dev servers, `docker compose up`) are additionally watched for stderr matching common crash shapes (`Error:`, `Traceback`, `panic:`, unhandled rejection patterns) as an explicitly-labeled best-effort secondary signal.
+- **Filesystem:** `chokidar` watches the project directory. On save, content is parsed by `web-tree-sitter` in a background thread (AST parse under ~10ms; explicit `tree.delete()`/`parser.delete()` in `finally` blocks prevents memory leaks). It excludes `.env`, `.git/`, `node_modules/`, common build output dirs, anything the project's own `.gitignore` excludes, and binaries over 500KB.
+- **Terminal:** `node-pty` wraps the developer's shell (via `stenod attach`), batching output at 16ms intervals with a 64KB backpressure high-water mark (overflow spills to a temp file, the stream pauses, then resumes after flush). The success/failure signal is the **shell exit code** for commands that terminate — language-agnostic, and it doesn't depend on matching test-runner-specific output strings. Long-running processes that never exit within a session (dev servers, `docker compose up`) are additionally watched for stderr matching common crash shapes (`Error:`, `Traceback`, `panic:`, unhandled rejection patterns), an explicitly-labeled best-effort secondary signal.
 
 **Opt-in tier (`stenod enable-network-capture`):**
 
-- A local HTTPS interception proxy — not a per-IDE integration — since AI providers are reached over HTTPS regardless of which surface (browser tab, Cursor, Windsurf, etc.) initiates the call. This single mechanism replaces what a separate browser extension and separate "IDE integration" would each have had to duplicate.
-- Generates a local root CA, installed into the OS trust store only when this command is explicitly run — never silently.
-- Routes traffic via `HTTP_PROXY`/`HTTPS_PROXY`, **allowlisting known AI-provider domains only** (`api.anthropic.com`, `api.openai.com`, `generativelanguage.googleapis.com`) — everything else passes through untouched and unlogged. This allowlist is plain, readable code, independently verifiable by anyone who installs the tool.
+- A local HTTPS interception proxy, rather than a per-IDE integration, since AI providers are reached over HTTPS regardless of which surface (browser tab, Cursor, Windsurf, and so on) initiates the call. This single mechanism replaces what a separate browser extension and a separate "IDE integration" would each have had to duplicate.
+- It generates a local root CA, installed into the OS trust store only when this command is explicitly run — never silently.
+- It routes traffic via `HTTP_PROXY`/`HTTPS_PROXY`, **allowlisting known AI-provider domains only** (`api.anthropic.com`, `api.openai.com`, `generativelanguage.googleapis.com`). Everything else passes through untouched and unlogged. This allowlist is plain, readable code, independently verifiable by anyone who installs the tool.
 - SSE/streaming responses are `.tee()`'d: one stream continues to the caller unmodified, the other feeds the daemon.
-- Known, stated limitation: certificate-pinned applications refuse the local CA and won't be visible, even with this tier enabled.
-- `stenod disable-network-capture` fully reverts the CA and proxy settings — a trust ask needs an equally clear undo path.
+- A stated limitation: certificate-pinned applications refuse the local CA and won't be visible, even with this tier enabled.
+- `stenod disable-network-capture` fully reverts the CA and proxy settings. A trust ask needs an equally clear undo path.
 
-**Ingestion queue:** all tracks feed one serialized queue into WAL-SQLite. Shared max in-flight depth; overflow spills to an append-only disk buffer, drained FIFO, never silently dropped. Target write latency under 5ms.
+**Ingestion queue:** all tracks feed one serialized queue into WAL-SQLite. There's a shared max in-flight depth; overflow spills to an append-only disk buffer, drained FIFO, never silently dropped. Target write latency is under 5ms.
 
 **Security baseline:** every local socket/proxy connection requires a token generated at `stenod init`, stored in `.stenod/token`, rotated via `stenod init --reset`.
 
-**Workspace sandboxing:** one daemon per resolved project root, DB at `<project>/.stenod/graph.db`, a PID lock file prevents a second daemon attaching to the same root.
+**Workspace sandboxing:** one daemon per resolved project root, DB at `<project>/.stenod/graph.db`, with a PID lock file to prevent a second daemon attaching to the same root.
 
 **Daemon crash recovery:** `stenod init` generates a systemd user unit (Linux) or launchd plist (Mac) with `Restart=on-failure`.
 
 ### 6.2 Storage Layer — Causal Graph
 
-**Why a typed-edge graph, not a vector store:** vector similarity clusters "use MongoDB" and "switch to PostgreSQL" together because they're semantically close — exactly wrong for a system whose job is knowing which one is *still true*. (This insight isn't unique to Stenod — Zep's Graphiti applies similar temporal-graph thinking to conversational facts. The distinction here is scope — developer/codebase causal events, not chat facts — and mechanism: out-of-band capture, zero API dependency at read time.)
+**Why a typed-edge graph, not a vector store:** vector similarity clusters "use MongoDB" and "switch to PostgreSQL" together because they're semantically close — exactly wrong for a system whose job is knowing which one is *still true*. (This insight isn't unique to Stenod; Zep's Graphiti applies similar temporal-graph thinking to conversational facts. What differs here is scope — developer/codebase causal events, not chat facts — and mechanism: out-of-band capture, zero API dependency at read time.)
 
-The graph uses three tables:
+The graph uses three tables.
 
 **`graph_nodes`**
 | column | type | notes |
@@ -171,53 +171,53 @@ The graph uses three tables:
 | `token_count` | INTEGER | |
 | `outcome` | ENUM, nullable | `WORKED` / `FAILED`, set via `stenod handoff --worked`/`--failed` |
 
-Storage runs with `PRAGMA journal_mode=WAL`, `synchronous=NORMAL`, `cache_size=-64000`. Schema version is tracked via `PRAGMA user_version`; `stenod start` runs pending migrations before attaching.
+Storage runs with `PRAGMA journal_mode=WAL`, `synchronous=NORMAL`, `cache_size=-64000`. Schema version is tracked via `PRAGMA user_version`, and `stenod start` runs pending migrations before attaching.
 
-**Constraint syntax:** `// VCS: constraint[key]=value` (or the equivalent per-language comment syntax), recognized wherever tree-sitter identifies a comment node — language-agnostic since it matches comment text, not code structure.
+**Constraint syntax:** `// VCS: constraint[key]=value` (or the equivalent per-language comment syntax), recognized wherever tree-sitter identifies a comment node. It's language-agnostic, since it matches comment text rather than code structure.
 
-**Language scope:** tree-sitter grammars for JavaScript/TypeScript at launch, matching the tool's own stack. Additional grammars are a natural, well-bounded category of future contribution — tree-sitter grammars are modular by design.
+**Language scope:** tree-sitter grammars for JavaScript/TypeScript at launch, matching the tool's own stack. Additional grammars are a natural, well-bounded category of future contribution, since tree-sitter grammars are modular by design.
 
 ### 6.3 Lifecycle, Conflict Resolution, Decay
 
-**FSM:** `IDE_IDLE → RUNTIME_ERR` (stderr/nonzero exit) `→ DOC_EDIT` (save) `→ DIFF_SUBMIT` (commit). A direct `RUNTIME_ERR → DIFF_SUBMIT` skip is tagged `PROVISIONAL_PANIC`, excluded from manifests unless explicitly anchored.
+**FSM:** `IDE_IDLE → RUNTIME_ERR` (stderr/nonzero exit) `→ DOC_EDIT` (save) `→ DIFF_SUBMIT` (commit). A direct `RUNTIME_ERR → DIFF_SUBMIT` skip is tagged `PROVISIONAL_PANIC` and excluded from manifests unless explicitly anchored.
 
-`PROVIDER_CAPTURE` nodes are stored as content but do **not** drive FSM transitions — transitions stay driven exclusively by terminal exit codes and file saves, the two unambiguous ground-truth signals. Classifying intent from AI conversation text would reintroduce exactly the kind of content heuristic the FSM exists to avoid.
+`PROVIDER_CAPTURE` nodes are stored as content but do **not** drive FSM transitions. Transitions stay driven exclusively by terminal exit codes and file saves, the two unambiguous ground-truth signals. Classifying intent from AI conversation text would reintroduce exactly the kind of content heuristic the FSM exists to avoid.
 
 **Recency decay:**
 ```
 decay(Δt) = 1 / (1 + ln(1 + Δt_seconds))
 ```
-Monotonic, no singularity, decay(0) = 1. (The naive form `1/ln(1+Δt)` is undefined at Δt=0 — a new node yields ln(1)=0, i.e. division by zero — which is why the `1 +` term is inside the denominator.)
+It's monotonic, has no singularity, and decay(0) = 1. The naive form `1/ln(1+Δt)` is undefined at Δt=0 — a new node yields ln(1)=0, i.e. division by zero — which is why the `1 +` term sits inside the denominator.
 
 **Conflict resolution (Last-Writer-Wins):** a new `CONSTRAINT` node sharing a `constraint_key` with an `ACTIVE` constraint draws a `CONTRADICTS` edge to it and flips the old node to `SUPERSEDED`. The compiler excludes anything not `ACTIVE`, unconditionally.
 
-**Rejection:** `stenod reject --since 15m` — time-windowed to match FSM session boundaries, not arbitrary node counts. A pure graph-metadata operation (`status = REJECTED`); verifying deletion from the filesystem is git's job, not this system's.
+**Rejection:** `stenod reject --since 15m` is time-windowed to match FSM session boundaries rather than arbitrary node counts. It's a pure graph-metadata operation (`status = REJECTED`); verifying deletion from the filesystem is git's job, not this system's.
 
 **Anti-rot:** an FSM stuck in `RUNTIME_ERR` for τ > 600s seals the active tree and applies decay.
 
 ### 6.4 Compilation Engine
 
-Utility score per node: `v_i = λ1·decay(Δt) + λ2·causal_centrality + λ3·constraint_priority`, with static constants `λ1=0.4, λ2=0.4, λ3=0.2` — fixed, not learned, consistent with the whole system's determinism principle. `causal_centrality` is simple in/out-degree within the node's own edge set — cheap, O(V+E), sufficient at realistic single-project graph sizes.
+The utility score per node is `v_i = λ1·decay(Δt) + λ2·causal_centrality + λ3·constraint_priority`, with static constants `λ1=0.4, λ2=0.4, λ3=0.2` — fixed, not learned, consistent with the whole system's determinism principle. `causal_centrality` is simple in/out-degree within the node's own edge set: cheap, O(V+E), and sufficient at realistic single-project graph sizes.
 
-**A precision point worth documenting, since it's easy to get wrong:** Dantzig's greedy-by-ratio is provably optimal for the *fractional* knapsack problem — it carries **no formal optimality guarantee for 0/1 knapsack**, which is what node selection actually is (a node is either in the manifest or not). The algorithm:
+One precision point is worth documenting, since it's easy to get wrong. Dantzig's greedy-by-ratio is provably optimal for the *fractional* knapsack problem, but it carries **no formal optimality guarantee for 0/1 knapsack**, which is what node selection actually is (a node is either in the manifest or not). The algorithm:
 
-1. Traverse graph, drop anything `status != ACTIVE`.
+1. Traverse the graph, drop anything `status != ACTIVE`.
 2. Force-include all `CONSTRAINT` nodes → primacy zone, regardless of score.
 3. Sort remaining nodes by `v_i / token_cost` descending.
 4. Pack until the token budget is hit.
 5. **Local improvement pass:** for the lowest-value included node, check whether swapping it for the highest-value excluded node that still fits improves total value. Repeat until no improving swap exists.
 
-This is a standard, cheap heuristic upgrade to plain greedy — no O(n²·1/ε) DP matrix needed. If a *proven* optimality bound is ever needed, that's the honest reason to build the DP, not because greedy is "wrong" as-is.
+This is a standard, cheap heuristic upgrade to plain greedy — no O(n²·1/ε) DP matrix needed. If a *proven* optimality bound is ever required, that's the honest reason to build the DP, not because greedy is "wrong" as-is.
 
-**Tiered content inclusion:** each packed node carries actual content, tiered by importance so the manifest reads as a briefing rather than a raw dump. `CONSTRAINT` nodes carry full content; nodes with `utilityScore ≥ 0.6` carry a bounded excerpt (capped at 300 tokens); everything else carries a short deterministic one-line summary (`"{type} in {source_file}"`). Token cost reflects the tier actually emitted, and all thresholds are fixed constants — no LLM/summarization step, consistent with the zero-LLM-dependency guarantee.
+**Tiered content inclusion:** each packed node carries actual content, tiered by importance so the manifest reads as a briefing rather than a raw dump. `CONSTRAINT` nodes carry full content; nodes with `utilityScore ≥ 0.6` carry a bounded excerpt (capped at 300 tokens); everything else carries a short deterministic one-line summary (`"{type} in {source_file}"`). Token cost reflects the tier actually emitted, and all thresholds are fixed constants — no LLM or summarization step, consistent with the zero-LLM-dependency guarantee.
 
-**Token counting:** a local, offline tokenizer (`gpt-tokenizer`) measures `token_cost` per node — zero network calls, consistent with the offline guarantee.
+**Token counting:** a local, offline tokenizer (`gpt-tokenizer`) measures `token_cost` per node, with zero network calls, consistent with the offline guarantee.
 
 **Output structure (U-shaped):** constraints (primacy zone) → packed causal graph (middle) → exact resume instruction plus the "Next Actions" block, derived from the FSM's current unresolved state (recency zone). This exploits the well-documented transformer tendency to attend most strongly to the beginning and end of a context window.
 
 ### 6.5 Delivery
 
-Clipboard copy is the guaranteed path — zero dependency on anything being reachable, the entire point of the project. The optional MCP exposure is convenience only, and degrades gracefully to clipboard-only if unavailable. Every compiled manifest is logged (`manifest_log`) before delivery.
+Clipboard copy is the guaranteed path, with zero dependency on anything being reachable — the entire point of the project. The optional MCP exposure is convenience only, and it degrades gracefully to clipboard-only if unavailable. Every compiled manifest is logged (`manifest_log`) before delivery.
 
 ---
 
@@ -244,9 +244,9 @@ Clipboard copy is the guaranteed path — zero dependency on anything being reac
 
 ## 8. Why This Approach
 
-Restating §2's table as the core differentiation: every serious alternative — Mem0, Zep, Letta, MemPalace, Supermemory, Cascade Memories, Cursor Notepads — is in-band. Stenod is the only one in this comparison set built specifically around surviving the moment the AI itself is unreachable. That is a narrow, specific, honestly-defensible claim — not "better memory," but a different failure-mode guarantee entirely.
+To restate §2's table as the core differentiation: every serious alternative — Mem0, Zep, Letta, MemPalace, Supermemory, Cascade Memories, Cursor Notepads — is in-band. Stenod is the only one in this comparison set built around surviving the moment the AI itself is unreachable. That's a narrow, specific, defensible claim. It isn't "better memory"; it's a different failure-mode guarantee.
 
-Being open source strengthens this specific claim in a way a closed-source competitor structurally cannot match: the "zero network calls except an explicit AI-provider allowlist" promise is independently checkable by reading the code, not something a user has to trust a vendor about.
+Being open source strengthens this claim in a way a closed-source competitor structurally can't match. The "zero network calls except an explicit AI-provider allowlist" promise is checkable by reading the code, rather than something a user has to take a vendor's word for.
 
 ---
 
@@ -258,10 +258,10 @@ Deliberately out of scope for this version:
 - Multi-developer collaborative graph merging
 - Adaptive/learned λ weight tuning (kept static and inspectable, by design)
 - Full Windows terminal-capture support (`stenod attach` and the network tier are Unix/Mac only, since both depend on `node-pty` and OS trust-store operations)
-- Any in-band LLM verification step (would reintroduce the exact dependency this system exists to avoid)
+- Any in-band LLM verification step (it would reintroduce the exact dependency this system exists to avoid)
 - Certificate-pinned applications (invisible to the opt-in network tier)
-- Embeddings/semantic fidelity scoring — deliberately never built; see §12 for what replaces it
-- Web dashboard / UI — CLI-only by design in this version
+- Embeddings/semantic fidelity scoring (deliberately never built; see §12 for what replaces it)
+- Web dashboard / UI (CLI-only by design in this version)
 - Live crash detection for bridged `stenod attach` sessions — only exit-code-driven success/failure is guaranteed there, not the stderr-shape heuristic, since the daemon receives only the final accumulated result at shell exit
 
 ---
@@ -269,8 +269,8 @@ Deliberately out of scope for this version:
 ## 10. Security, Privacy & Trust
 
 - **Zero telemetry, hard invariant** — no phone-home, ever, and independently verifiable since the code is open.
-- **Two-tier capture** exists specifically so installing this tool never requires trusting anything by default — the default tier needs no cert install, no proxy config.
-- **Two-layer secret protection** — never watching secret-adjacent paths (primary, strongest), regex redaction as a backstop (secondary, heuristic, stated honestly as imperfect).
+- **Two-tier capture** exists specifically so installing this tool never requires trusting anything by default — the default tier needs no cert install and no proxy config.
+- **Two-layer secret protection** — never watching secret-adjacent paths (primary, strongest), with regex redaction as a backstop (secondary, heuristic, and stated honestly as imperfect).
 - **Auth on every local connection** — a rotateable token prevents any other local process from injecting fake graph events or reading captured traffic.
 - **Full opt-out path** for the network tier, including CA removal — a trust ask needs an equally clear undo.
 
@@ -281,7 +281,7 @@ See [SECURITY.md](./SECURITY.md) for the plain-language account of exactly what 
 ## 11. Open Source Posture
 
 - **License:** MIT.
-- **Repo scaffolding:** README, LICENSE, SECURITY.md, and this document. No `CONTRIBUTING.md` and no active solicitation of external PRs at this stage — a deliberate, common early-stage stance. The license governs what others may legally do with the code; it says nothing about whether contributions are currently being reviewed. Contribution infrastructure can be added later without changing anything already built.
+- **Repo scaffolding:** README, LICENSE, SECURITY.md, and this document. There's no `CONTRIBUTING.md` and no active solicitation of external PRs at this stage — a deliberate early-stage stance. The license governs what others may legally do with the code; it says nothing about whether contributions are currently being reviewed. Contribution infrastructure can be added later without changing anything already built.
 - **Distribution:** npm, package name `steno-daemon` (the CLI command itself is `stenod`).
 
 ---
@@ -297,13 +297,13 @@ No invented, unvalidated fidelity score. Two tiers, both honest:
 
 ## 13. Cost
 
-Fully free. Node.js, SQLite, `chokidar`, `node-pty`, `web-tree-sitter`, `gpt-tokenizer`, `mockttp`, and `node-forge` are all free, open-source packages. No hosted database, no vector DB service, no cloud LLM calls during normal operation — that's the architecture's whole point. There is no per-user or per-install cost for anyone who runs this tool.
+Fully free. Node.js, SQLite, `chokidar`, `node-pty`, `web-tree-sitter`, `gpt-tokenizer`, `mockttp`, and `node-forge` are all free, open-source packages. There's no hosted database, no vector DB service, and no cloud LLM calls during normal operation — that's the architecture's whole point. There is no per-user or per-install cost for anyone who runs the tool.
 
 ---
 
 ## 14. Design Decision Log
 
-A record of material corrections made during design, kept so a future contributor understands *why* things are the way they are, not just what they are.
+A record of the material corrections made during design, kept so a future contributor understands *why* things are the way they are, not just what they are.
 
 | Issue | Resolution |
 |---|---|
@@ -315,7 +315,7 @@ A record of material corrections made during design, kept so a future contributo
 | Filesystem-diffing rollback verification proposed | Cut — redundant with git, which already answers "is this code actually gone" |
 | Fabricated baseline numbers appeared in early research notes | Removed entirely; no unvalidated metrics appear in this document |
 | Recency decay formula divided by zero at Δt=0 | Fixed to `1 / (1 + ln(1 + Δt))` |
-| A rehearsal-probe step required an in-band LLM call | Cut — directly contradicted the core "zero LLM dependency" claim |
+| A rehearsal-probe step required an in-band LLM call | Cut — it directly contradicted the core "zero LLM dependency" claim |
 | Capture mechanism couldn't see IDE-native AI chat panels, only browser tabs | Generalized to a local HTTPS interception proxy covering any tool making outbound HTTPS calls; the browser-extension-only design was fully superseded |
 | HTTPS interception originally implied as default-on | Made strictly opt-in, since the tool ships to strangers, not just the author's machine |
 | `manifest_log` referenced in delivery but never defined in storage | Table added |
@@ -325,6 +325,6 @@ A record of material corrections made during design, kept so a future contributo
 | No filesystem ignore-list beyond a binary-size cap | Added — `.env`, `.git/`, `node_modules/`, build output dirs, `.gitignore`-respecting |
 | No handling for long-running processes that never exit | Added — stderr crash-shape matching as an explicitly-labeled secondary heuristic |
 | No schema migration story for users upgrading over time | Added — `PRAGMA user_version` plus a migration runner on `stenod start` |
-| Packed manifest nodes carried only metadata, not real content | Fixed via tiered content inclusion (see §6.4) — the manifest now carries actual resumable text |
+| Packed manifest nodes carried only metadata, not real content | Fixed via tiered content inclusion (see §6.4); the manifest now carries actual resumable text |
 | Terminal capture was built but never wired into the running daemon | Wired in via `stenod attach`, which bridges an interactive shell to the detached daemon over the token-authenticated local socket |
 | Package name collided with npm's similarity checks | Published as `steno-daemon`; the CLI command remains `stenod` |
