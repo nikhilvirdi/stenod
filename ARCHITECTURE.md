@@ -1,4 +1,4 @@
-# Stenod — Architecture & Design
+# Stenod : Architecture & Design
 
 This document explains what Stenod is, the problem it solves, how each part works, and the reasoning behind the major design decisions. It's the reference for anyone who wants to understand the system beyond the [README](./README.md): how the capture layer, causal graph, compiler, and delivery path fit together, and why they were built this way.
 
