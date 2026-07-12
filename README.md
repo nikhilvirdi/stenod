@@ -1,35 +1,35 @@
-# Stenod
+Stenod
 
 <p align="center">
   <img width="480" alt="Stenod — a black box recorder for your AI coding sessions" src="https://github.com/user-attachments/assets/de2bdd63-0cb7-447a-a2cb-f1ac3525748d" />
 </p>
+<p align="center">
+Show Image
+Show Image
+Show Image
+Show Image
+Show Image
+Show Image
+Show Image
+Show Image
+Show Image
+Show Image
+Show Image
+Show Image
+Show Image
+Show Image
+Show Image
+Show Image
+Show Image
 
+</p>
 A black box recorder for your AI coding sessions.
 
-AI-assisted coding sessions collapse at boundaries — rate limits, provider outages, context-window exhaustion, or a developer deliberately switching tools mid-task. What's lost at that moment isn't just chat history; it's the *reasoning*: which decisions were made and why, which approaches were tried and rejected, and what you were mid-way through doing.
+AI-assisted coding sessions collapse at boundaries — rate limits, provider outages, context-window exhaustion, or a developer deliberately switching tools mid-task. What's lost at that moment isn't just chat history; it's the reasoning: which decisions were made and why, which approaches were tried and rejected, and what you were mid-way through doing.
 
 Stenod is a local, deterministic daemon that quietly watches your files and terminal — not your chat — and compiles everything that actually matters into a Handoff Manifest the moment you need to resume, in any AI tool, cold. It's out-of-band by design: it never depends on the AI being alive or reachable, because it was never inside that AI in the first place.
 
-[![CI](https://github.com/nikhilvirdi/stenod/actions/workflows/ci.yml/badge.svg)](https://github.com/nikhilvirdi/stenod/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/steno-daemon.svg)](https://www.npmjs.com/package/steno-daemon)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![SQLite](https://img.shields.io/badge/SQLite-WAL%20mode-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![better-sqlite3](https://img.shields.io/badge/better--sqlite3-driver-003B57)](https://github.com/WiseLibs/better-sqlite3)
-[![Commander.js](https://img.shields.io/badge/CLI-commander.js-black)](https://github.com/tj/commander.js)
-[![chokidar](https://img.shields.io/badge/fs%20watching-chokidar-blue)](https://github.com/paulmillr/chokidar)
-[![node-pty](https://img.shields.io/badge/terminal-node--pty-blue)](https://github.com/microsoft/node-pty)
-[![web-tree-sitter](https://img.shields.io/badge/AST%20parsing-web--tree--sitter-orange)](https://github.com/tree-sitter/tree-sitter)
-[![mockttp](https://img.shields.io/badge/HTTPS%20interception-mockttp-purple)](https://github.com/httptoolkit/mockttp)
-[![node-forge](https://img.shields.io/badge/CA%20generation-node--forge-purple)](https://github.com/digitalbazaar/forge)
-[![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-5A67D8)](https://modelcontextprotocol.io/)
-[![Vitest](https://img.shields.io/badge/tested%20with-Vitest-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
-[![ESLint](https://img.shields.io/badge/lint-ESLint-4B32C3?logo=eslint&logoColor=white)](https://eslint.org/)
-[![Prettier](https://img.shields.io/badge/code%20style-Prettier-F7B93E?logo=prettier&logoColor=black)](https://prettier.io/)
-
-For the full architecture, design rationale, and comparison against existing AI-memory tools, see [STENOD_SSOT.md](./STENOD_SSOT.md). For exactly what's captured, where it's stored, and the opt-in network tier's guarantees, see [SECURITY.md](./SECURITY.md).
-
+For the full architecture, design rationale, and comparison against existing AI-memory tools, see STENOD_SSOT.md. For exactly what's captured, where it's stored, and the opt-in network tier's guarantees, see SECURITY.md.
 ---
 
 ## Install
