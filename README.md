@@ -28,11 +28,11 @@
 
 A black box recorder for your AI coding sessions.
 
-AI-assisted coding sessions collapse at boundaries — rate limits, provider outages, context-window exhaustion, or a developer deliberately switching tools mid-task. What's lost at that moment isn't just chat history; it's the *reasoning*: which decisions were made and why, which approaches were tried and rejected, and what you were mid-way through doing.
+AI-assisted coding sessions collapse at boundaries: rate limits, provider outages, context-window exhaustion, a developer switching tools mid-task. What's lost at that moment isn't just chat history. It's the *reasoning* — which decisions were made and why, which approaches were tried and rejected, and what you were in the middle of doing.
 
-Stenod is a local, deterministic daemon that quietly watches your files and terminal — not your chat — and compiles everything that actually matters into a Handoff Manifest the moment you need to resume, in any AI tool, cold. It's out-of-band by design: it never depends on the AI being alive or reachable, because it was never inside that AI in the first place.
+Stenod is a local, deterministic daemon that quietly watches your files and terminal, not your chat, and compiles everything that matters into a Handoff Manifest the moment you need to resume, in any AI tool, cold. It's out-of-band by design: it never depends on the AI being alive or reachable, because it was never inside that AI to begin with.
 
-For the full architecture, design rationale, and comparison against existing AI-memory tools, see [STENOD_SSOT.md](./STENOD_SSOT.md). For exactly what's captured, where it's stored, and the opt-in network tier's guarantees, see [SECURITY.md](./SECURITY.md).
+For the full architecture, design rationale, and comparison against existing AI-memory tools, see [ARCHITECTURE.md](./ARCHITECTURE.md). For exactly what's captured, where it's stored, and the opt-in network tier's guarantees, see [SECURITY.md](./SECURITY.md).
 
 ---
 
@@ -54,13 +54,13 @@ stenod start
 > [!IMPORTANT]
 > `stenod start` alone only captures **filesystem** events — it never spawns a shell itself, since the daemon runs fully detached. To also capture a **terminal** session, run `stenod attach` in each interactive shell you want captured, once per session.
 
-Work normally — save files, run commands. When you need to hand off:
+Work normally: save files, run commands. When you need to hand off:
 
 ```
 stenod handoff
 ```
 
-The compiled Handoff Manifest is copied to your clipboard. Paste it into any AI tool to resume exactly where you left off.
+The compiled Handoff Manifest is copied to your clipboard. Paste it into any AI tool to resume where you left off.
 
 ## Command Reference
 
@@ -80,9 +80,9 @@ The compiled Handoff Manifest is copied to your clipboard. Paste it into any AI 
 
 ## How It Works
 
-`chokidar` watches your project's files; `stenod attach` bridges real terminal activity in; both feed a causal graph stored in local SQLite, with typed edges (`CAUSED_BY`, `CONTRADICTS`, `DEPENDS_ON`) instead of a vector store — so the system tracks which decisions are *still true*, not just which are *semantically similar*. A deterministic compiler packs the highest-value nodes into a token budget using greedy-by-ratio knapsack packing, structures the output U-shaped (constraints first, causal history in the middle, next steps last) to exploit transformer attention bias, and delivers it via clipboard or, optionally, as an MCP resource.
+`chokidar` watches your project's files, and `stenod attach` bridges in real terminal activity. Both feed a causal graph stored in local SQLite, using typed edges (`CAUSED_BY`, `CONTRADICTS`, `DEPENDS_ON`) instead of a vector store, so the system tracks which decisions are still true rather than which ones sound similar. A deterministic compiler packs the highest-value nodes into a token budget with greedy-by-ratio knapsack packing, structures the output U-shaped (constraints first, causal history in the middle, next steps last) to work with how transformers attend to context, and delivers it via clipboard or, optionally, as an MCP resource.
 
-Full detail: [STENOD_SSOT.md](./STENOD_SSOT.md).
+Full detail: [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ## Security & Privacy
 
@@ -92,10 +92,10 @@ Full detail: [SECURITY.md](./SECURITY.md).
 
 ## Platform Support
 
-Filesystem capture and the core CLI work on Windows, Linux, and Mac. Terminal capture (`stenod attach`) and the network-capture tier depend on Unix/Mac-only mechanisms (`node-pty`, OS trust-store APIs) and are not available on Windows.
+Filesystem capture and the core CLI work on Windows, Linux, and Mac. Terminal capture (`stenod attach`) and the network-capture tier depend on Unix/Mac-only mechanisms (`node-pty`, OS trust-store APIs) and aren't available on Windows.
 
 ## License & Contributing
 
 MIT © Nikhil Virdi — see [LICENSE](./LICENSE) for details.
 
-This project is not yet accepting external contributions — no `CONTRIBUTING.md` exists yet. This is a deliberate early-stage choice, not an oversight; contribution infrastructure may be added later.
+This project isn't yet accepting external contributions; no `CONTRIBUTING.md` exists yet. That's a deliberate early-stage choice, not an oversight. Contribution infrastructure may be added later.
