@@ -1,31 +1,93 @@
-<img width="1280" height="640" alt="stenod (1)" src="https://github.com/user-attachments/assets/d8d87268-9e90-4932-8bd1-27ccf695a02e" />
-
 # Stenod
 
-## The Problem
+Local, deterministic, out-of-band session capture daemon for AI-assisted coding.
 
-You're deep in a session with an AI coding assistant. It's been going well — you explained the project, worked through a few architectural decisions together, hit a bug, fixed it, tried an approach that didn't pan out and moved past it. You're in flow, and the AI actually *gets* what you're building.
+Stenod watches your project directory and terminal sessions, recording every file save and shell command into a local causal graph. When you're ready to hand off context to an AI assistant (or switch contexts yourself), Stenod compiles that history into a precise, deterministic prompt covering everything that happened since the last handoff.
 
-Then you hit your rate limit. Or the provider has an outage. Or the model just gets stuck on something and you need to try a different one. Either way — the conversation's over, and everything that AI understood about your project disappears with it.
+> **Zero Telemetry**: Stenod stores everything locally in your project's `.stenod/` directory. It never phones home. See [SECURITY.md](SECURITY.md) for full details on what is captured and how your data is protected.
+> 
+> See [STENOD_SSOT.md](STENOD_SSOT.md) for the project's single source of truth, architecture, and design decisions.
 
-So you open a new chat. And now you're the one doing all the work: "Okay, we're using Postgres, not Mongo — that was a deliberate call. There's a bug in `auth.ts` I was in the middle of fixing. Don't touch the payment logic, it's fragile for reasons I don't have the energy to re-explain right now. Also we tried an approach with Redis caching earlier and abandoned it, so don't suggest that again." You type all of this from memory, under time pressure, hoping you remembered the important parts.
+## Installation
 
-And even if you get it all down — long, dense context dumps are exactly what these models handle worst. Stuff buried in the middle of a big prompt gets weighted less than stuff at the start or end. So the new AI skims past the one line that actually mattered, quietly ignores the constraint you just told it, and you don't find out until it suggests Redis caching again twenty minutes later.
+```bash
+npm install -g stenod
+```
 
-This isn't a rare, edge-case annoyance. It's the default outcome every time a session breaks unexpectedly — and sessions break unexpectedly *often*: usage caps, provider outages, a model getting stuck mid-task, switching tools because one just isn't working for this particular problem. Every one of those moments costs you the same thing: fifteen, twenty, thirty minutes of re-establishing context you already had, badly, from memory, while the actual momentum you were building just evaporates.
+*Note: For local testing before this is published to npm, run `npm run build && npm link` from the repo root, which makes the `stenod` command available globally.*
 
-Here's the part that makes it sting more: none of that context was ever really *gone*. Your code is still on disk, exactly as you left it. Your terminal history still shows the error you were chasing. Nothing about your actual work was lost — only the AI's understanding of it. The one thing that shouldn't be fragile is the one thing that's completely at the mercy of a conversation window.
+## Quick Start
 
-## What stenod is ?
+Initialize Stenod in your project directory (creates `.stenod/` and generates a local auth token):
+```bash
+stenod init
+```
 
-Picture a black box flight recorder — the kind planes carry. It doesn't fly the plane, it doesn't talk to air traffic control, it doesn't do anything glamorous. It just quietly, continuously records what's actually happening. And critically: if something goes wrong with the plane, the recorder isn't affected, because it was never depending on the plane staying airborne in the first place. That's the whole idea, borrowed almost exactly.
+Start the background ingestion daemon:
+```bash
+stenod start
+```
 
-Stenod is a small program that runs quietly in the background on your own machine while you code. It doesn't watch your AI conversation — it watches *your actual work*. Every time you save a file, it notices. Every time you run a command in your terminal and it succeeds or fails, it notices that too. It's not recording video or keystrokes — it's building something closer to a timeline of cause and effect: you tried this, it broke, you changed that, it worked, this rule was established and hasn't changed since.
+> [!IMPORTANT]
+> `stenod start` alone **only captures filesystem events**. Because the daemon runs fully detached in the background, it has no TTY of its own and cannot automatically attach to your open shells.
+> 
+> **To capture terminal activity, you must run `stenod attach` separately in each interactive shell you want to capture.**
 
-It also gives you a way to explicitly mark things that matter — a comment in your code, or a quick command, that says "this is a hard constraint, don't let a new AI session suggest otherwise." Those get remembered with extra weight, specifically so they survive into whatever comes next.
+Attach your current terminal session to the daemon:
+```bash
+stenod attach
+```
+This spawns a wrapped shell. When you exit this shell (e.g., via `exit` or Ctrl+D), the accumulated output and exit code will be recorded.
 
-Here's the part that makes it different from just... taking notes: it never talks to the AI. Not during normal operation, not ever, unless you explicitly ask it to. It's not plugged into Claude's API or watching your ChatGPT tab. It's a completely separate process, sitting on your machine, that would keep running exactly the same way whether your AI session is healthy, rate-limited, or down entirely. Nothing about it depends on the thing it's helping you recover from.
+When you're ready to hand off your context to an AI, generate the manifest (copies to your clipboard):
+```bash
+stenod handoff
+```
 
-Then comes the moment that actually matters: your session gets cut off. You type one command — `stenod handoff`. Stenod looks at everything it's been quietly building, and it does two things well. First, it filters — the dead ends you abandoned, the errors you already fixed, none of that clutters the output; only what's still actually true and relevant survives. Second, it organizes what's left deliberately, not just dumps it — the non-negotiable rules go first, the messy middle detail goes in the middle, and the exact next step goes last, because that's the order that actually gets read and used well, not just the order it happened to occur in.
+## Command Reference
 
-The result gets copied straight to your clipboard. You paste it into a brand new AI session — could be Claude again, could be ChatGPT, could be whatever's actually available right now — and it picks up close to where you were, because what you handed it wasn't a frantic re-explanation typed from memory under pressure. It was a clean, deliberate summary, built the whole time you were working, by something that was never at risk of losing it.
+### `stenod init`
+Set up the daemon and database for a project directory. Generates a local auth token (`.stenod/token`) and creates the `.stenod/` sandbox. On Linux and macOS, it also generates a systemd/launchd service unit file you can install for auto-restart.
+- `--reset`: Rotate the local auth token.
+
+### `stenod start`
+Start the background ingestion daemon for the project.
+- `--project-root <path>`: Specify the project root (defaults to current working directory).
+- `--foreground`: Run in the foreground instead of detaching (used internally).
+
+### `stenod stop`
+Stop the background ingestion daemon.
+
+### `stenod attach`
+Attach an interactive shell to the running daemon. **This must be run explicitly in each shell session you want to capture.**
+
+### `stenod status`
+Check daemon health, node count, and the timestamp of the last captured event.
+
+### `stenod handoff`
+Compile the causal graph into a Handoff Manifest and copy it to your clipboard.
+- `--worked`: Tag the outcome of the most recent manifest in the audit log as having worked successfully.
+- `--failed`: Tag the outcome of the most recent manifest in the audit log as having failed.
+- `--token-budget <n>`: Override the default token budget (default: 8000).
+
+### `stenod anchor <text>`
+Create a CONSTRAINT node directly from the CLI. Use `key=value` text to enable LWW (Last-Writer-Wins) conflict resolution for constraints.
+
+### `stenod reject`
+Mark nodes in a time window as REJECTED, excluding them from all future manifests.
+- `--since <duration>`: Time window to reject (e.g., `5m`, `1h`). **(Required)**
+
+### `stenod enable-network-capture`
+Opt in to the AI-provider network capture tier.
+1. Generates a local root CA and installs it into your OS trust store (per-user only).
+2. Starts a local HTTPS proxy that intercepts traffic only to known AI-provider domains.
+3. Records captured responses into your project's causal graph.
+
+After running this, you must configure your shell/tools to use the printed proxy URL (e.g., `export HTTPS_PROXY=...`).
+*Note: This feature is unsupported on Windows.*
+
+### `stenod disable-network-capture`
+Fully revert the CA trust and proxy settings. Removes the CA from your OS trust store and deletes the local CA files.
+
+### `stenod mcp`
+Run as an MCP (Model Context Protocol) server over stdio to expose the handoff resource directly to compatible AI clients.
