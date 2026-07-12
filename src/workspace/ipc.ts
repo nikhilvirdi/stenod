@@ -50,6 +50,23 @@ import { readToken } from './token.js';
  *
  * DOES NOT: wire any filesystem capture, terminal capture, or graph-write
  * logic through the socket — that is the responsibility of Milestones 4–6.
+ *
+ * Phase 7.5 addition — `IpcServerOptions.onMessage`: this phase needs a real
+ * bridge from an authenticated connection to daemon-side logic (routing
+ * forwarded terminal-session results into `writeTerminalNode()`), and the
+ * only thing standing in the way was the hard-coded `if (authenticated)
+ * return;` no-op below — this file's own header already anticipated exactly
+ * this ("trivially extensible for future message types"). The auth
+ * handshake itself (token comparison, the timeout, the `{ok:true}`/
+ * `{ok:false}` responses) is untouched below — this only replaces what
+ * happens to data arriving on a connection that has *already* authenticated,
+ * which was previously always discarded regardless of caller. Confirmed
+ * with the user before extending this already-Verified phase's file, per
+ * the project's regression-guard rule — this addition does not itself
+ * revert Phase 2.3's status (it's additive/backward-compatible: any caller
+ * that omits `onMessage` gets byte-identical behavior to before), but is
+ * flagged here for the same transparency reason every such extension in
+ * this codebase has been.
  */
 
 /** Milliseconds to wait for an auth message before closing the connection. */
@@ -72,6 +89,21 @@ export function socketPath(projectRoot: string): string {
     return `\\\\.\\pipe\\stenod-${hash}`;
   }
   return join(stenoDir(projectRoot), 'daemon.sock');
+}
+
+/** Options accepted by createIpcServer() — Phase 7.5 addition, see this file's header. */
+export interface IpcServerOptions {
+  /**
+   * Called for every JSON message received on an already-authenticated
+   * connection. Omitted entirely, this is byte-identical to Phase 2.3's
+   * original behavior (post-auth data silently discarded).
+   *
+   * Malformed (non-JSON) post-auth messages are silently ignored rather
+   * than tearing down the connection — a single bad message from an
+   * already-authenticated client shouldn't kill the session, unlike a
+   * failed *auth* attempt, which is deliberately fatal to the connection.
+   */
+  onMessage?: (message: unknown, socket: Socket) => void;
 }
 
 /** Public interface returned by createIpcServer(). */
@@ -107,7 +139,7 @@ export interface IpcServer {
  * `projectRoot` must already be resolved to an absolute path (the value
  * returned by attachWorkspace() is the canonical input here).
  */
-export function createIpcServer(projectRoot: string): IpcServer {
+export function createIpcServer(projectRoot: string, options: IpcServerOptions = {}): IpcServer {
   const path = socketPath(projectRoot);
 
   // Track open sockets so close() can destroy them without waiting for
@@ -121,6 +153,11 @@ export function createIpcServer(projectRoot: string): IpcServer {
 
     let buffer = '';
     let authenticated = false;
+    // Separate buffer for post-auth messages — the pre-auth `buffer` above
+    // is deliberately reset and left alone once auth succeeds (its own
+    // comment: "one auth exchange per connection"), so post-auth framing
+    // needs its own accumulator rather than reusing/repurposing that one.
+    let postAuthBuffer = '';
 
     // Auth handshake timeout — destroy the connection if no message arrives.
     const authTimer = setTimeout(() => {
@@ -130,9 +167,28 @@ export function createIpcServer(projectRoot: string): IpcServer {
     }, AUTH_TIMEOUT_MS);
 
     socket.on('data', (chunk: string) => {
-      // Once authenticated, ignore further data — Phase 2.3 is auth-only.
-      // Future phases will add real message dispatch here.
-      if (authenticated) return;
+      // Once authenticated, dispatch further data as newline-delimited JSON
+      // messages to options.onMessage, if supplied (Phase 7.5 addition —
+      // see this file's header). No onMessage supplied -> byte-identical to
+      // Phase 2.3's original discard-everything behavior.
+      if (authenticated) {
+        if (!options.onMessage) return;
+        postAuthBuffer += chunk;
+        let idx: number;
+        while ((idx = postAuthBuffer.indexOf('\n')) !== -1) {
+          const line = postAuthBuffer.slice(0, idx).trim();
+          postAuthBuffer = postAuthBuffer.slice(idx + 1);
+          if (line === '') continue;
+          try {
+            const message = JSON.parse(line) as unknown;
+            options.onMessage(message, socket);
+          } catch {
+            // Malformed post-auth message — ignore, don't tear down the
+            // connection (unlike a failed auth attempt, which is fatal).
+          }
+        }
+        return;
+      }
 
       buffer += chunk;
       const newlineIdx = buffer.indexOf('\n');
@@ -170,7 +226,10 @@ export function createIpcServer(projectRoot: string): IpcServer {
       // Auth success.
       authenticated = true;
       socket.write(JSON.stringify({ ok: true }) + '\n');
-      // Connection stays open. Real message handling arrives in later phases.
+      // Connection stays open. Post-auth data now dispatches to
+      // options.onMessage (Phase 7.5) via the branch at the top of this
+      // handler — see this file's header for why that's additive, not a
+      // change to auth behavior.
     });
 
     socket.on('error', () => {

@@ -232,4 +232,170 @@ describe('IPC scaffold — Phase 2.3', () => {
     expect(r1.ok).toBe(true);
     expect(r2.ok).toBe(true);
   });
+
+  // ── Phase 7.5 addition: onMessage (post-auth message dispatch) ──────────────
+  //
+  // Coverage:
+  //   11. a well-formed post-auth message is dispatched to onMessage
+  //   12. with no onMessage supplied, post-auth data is silently discarded —
+  //       byte-identical to Phase 2.3's original behavior (no crash, no
+  //       response, connection stays open)
+  //   13. a malformed post-auth message is NOT dispatched, and does not tear
+  //       down the connection — a subsequent well-formed message on the same
+  //       connection still gets through
+  //   14. multiple messages (including split across separate writes) are each
+  //       dispatched exactly once, in order
+  //   15. the auth handshake itself is provably unaffected: the exact same
+  //       {ok:true}/{ok:false} behavior as every test above, now with
+  //       onMessage supplied
+
+  /**
+   * Connects, authenticates (must succeed — throws otherwise), then leaves
+   * the connection open for the caller to send further messages via the
+   * returned `send`/`waitForData`/`close` helpers. Unlike `exchange()`
+   * above, this does not close the connection after the first response.
+   */
+  async function connectAndAuth(
+    path: string,
+    token: string,
+  ): Promise<{
+    send: (payload: Record<string, unknown> | string) => void;
+    waitForData: (timeoutMs?: number) => Promise<string | undefined>;
+    close: () => void;
+  }> {
+    const client = createConnection(path);
+    client.setEncoding('utf8');
+    const received: string[] = [];
+    let buffer = '';
+
+    client.on('data', (chunk: string) => {
+      buffer += chunk;
+      let idx: number;
+      while ((idx = buffer.indexOf('\n')) !== -1) {
+        received.push(buffer.slice(0, idx));
+        buffer = buffer.slice(idx + 1);
+      }
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      client.once('connect', () => client.write(JSON.stringify({ token }) + '\n'));
+      client.once('error', reject);
+      const check = setInterval(() => {
+        if (received.length > 0) {
+          clearInterval(check);
+          const authMsg = JSON.parse(received.shift()!) as { ok: boolean };
+          if (!authMsg.ok) {
+            reject(new Error('auth failed in test helper'));
+          } else {
+            resolve();
+          }
+        }
+      }, 5);
+    });
+
+    return {
+      send: (payload) => {
+        const line = typeof payload === 'string' ? payload : JSON.stringify(payload);
+        client.write(line + '\n');
+      },
+      waitForData: (timeoutMs = 500) =>
+        new Promise((resolve) => {
+          const start = Date.now();
+          const check = setInterval(() => {
+            if (received.length > 0) {
+              clearInterval(check);
+              resolve(received.shift());
+            } else if (Date.now() - start >= timeoutMs) {
+              clearInterval(check);
+              resolve(undefined);
+            }
+          }, 5);
+        }),
+      close: () => client.destroy(),
+    };
+  }
+
+  it('a well-formed post-auth message is dispatched to onMessage', async () => {
+    const root = makeTempRoot();
+    const token = initToken(root);
+    const received: unknown[] = [];
+    const srv = createIpcServer(root, { onMessage: (msg) => received.push(msg) });
+    servers.push(srv);
+    await srv.listen();
+
+    const conn = await connectAndAuth(srv.path, token);
+    conn.send({ type: 'ping', value: 42 });
+
+    // Give the async dispatch a moment to run.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    conn.close();
+
+    expect(received).toEqual([{ type: 'ping', value: 42 }]);
+  });
+
+  it('with no onMessage supplied, post-auth data is silently discarded (matches Phase 2.3 original behavior)', async () => {
+    const root = makeTempRoot();
+    const token = initToken(root);
+    const srv = createIpcServer(root); // no onMessage
+    servers.push(srv);
+    await srv.listen();
+
+    const conn = await connectAndAuth(srv.path, token);
+    conn.send({ type: 'ping' });
+
+    const response = await conn.waitForData(200);
+    expect(response).toBeUndefined(); // no crash, no response, connection stayed open
+    conn.close();
+  });
+
+  it('a malformed post-auth message is ignored, without tearing down the connection', async () => {
+    const root = makeTempRoot();
+    const token = initToken(root);
+    const received: unknown[] = [];
+    const srv = createIpcServer(root, { onMessage: (msg) => received.push(msg) });
+    servers.push(srv);
+    await srv.listen();
+
+    const conn = await connectAndAuth(srv.path, token);
+    conn.send('this-is-not-json');
+    conn.send({ type: 'still-alive' }); // proves the connection survived the malformed line
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    conn.close();
+
+    expect(received).toEqual([{ type: 'still-alive' }]);
+  });
+
+  it('multiple messages, including ones split across separate writes, are each dispatched once and in order', async () => {
+    const root = makeTempRoot();
+    const token = initToken(root);
+    const received: unknown[] = [];
+    const srv = createIpcServer(root, { onMessage: (msg) => received.push(msg) });
+    servers.push(srv);
+    await srv.listen();
+
+    const conn = await connectAndAuth(srv.path, token);
+    conn.send({ seq: 1 });
+    conn.send({ seq: 2 });
+    conn.send({ seq: 3 });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    conn.close();
+
+    expect(received).toEqual([{ seq: 1 }, { seq: 2 }, { seq: 3 }]);
+  });
+
+  it('the auth handshake is unaffected by onMessage being supplied — correct and incorrect tokens behave exactly as before', async () => {
+    const root = makeTempRoot();
+    const token = initToken(root);
+    const srv = createIpcServer(root, { onMessage: () => {} });
+    servers.push(srv);
+    await srv.listen();
+
+    const correct = await exchange(srv.path, { token });
+    expect(correct.ok).toBe(true);
+
+    const wrong = await exchange(srv.path, { token: 'b'.repeat(64) });
+    expect(wrong.ok).toBe(false);
+  });
 });

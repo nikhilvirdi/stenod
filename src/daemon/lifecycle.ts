@@ -2,10 +2,13 @@ import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import type { FSWatcher } from 'chokidar';
 import { attachWorkspace, detachWorkspace, stenoDir } from '../workspace/sandbox.js';
+import { createIpcServer } from '../workspace/ipc.js';
+import type { IpcServer } from '../workspace/ipc.js';
 import { openDatabase, runMigrations } from '../storage/index.js';
 import { SessionFsm } from '../lifecycle/index.js';
 import { IngestionQueue } from '../capture/queue.js';
 import { createFileStateCapture } from '../capture/file-state.js';
+import { createTerminalBridgeHandler } from './terminal-bridge.js';
 
 /**
  * Phase 7.2 — `stenod start` / `stenod stop`
@@ -73,6 +76,30 @@ import { createFileStateCapture } from '../capture/file-state.js';
  *   drained." This mirrors the polling pattern this codebase already uses
  *   for async completion detection (e.g. `waitFor()` in
  *   terminal-state.test.ts).
+ *
+ * Phase 7.5 addition — closes Gap 3 (above): `startDaemon()` now also
+ * starts a Phase 2.3 `IpcServer`, wired to `terminal-bridge.ts`'s
+ * `createTerminalBridgeHandler()` via `createIpcServer()`'s new (Phase 7.5)
+ * `onMessage` hook. This does NOT spawn a PTY in the daemon — that was
+ * exactly Gap 4's root cause (an unreachable, unfed shell). Instead, a
+ * separate client (`stenod attach`, `cli/attach.ts`) owns the actual PTY in
+ * the user's real terminal (which has a real TTY; this daemon does not) and
+ * reports the accumulated content + exit code over the now-authenticated
+ * connection once that shell exits. `startDaemon()` is now `async` because
+ * `IpcServer.listen()` is — every existing caller needs an `await` added,
+ * which is the one behavioral change to already-Verified Phase 7.2 callers;
+ * filesystem-capture behavior itself is unchanged. `stopDaemon()` closes the
+ * IPC server alongside the fs watcher, so a stopped daemon accepts no new
+ * connections and `stenod attach` sessions fail cleanly rather than hanging.
+ *
+ * Known, explicitly-accepted limitation (per user confirmation): Phase 5.4's
+ * live stderr-heuristic crash detection (for long-running processes that
+ * never exit within a session) does not fire for `stenod attach` sessions —
+ * the daemon only receives the final accumulated result once the client's
+ * shell exits, not live batches as they arrive. Only exit-code-driven
+ * `TERMINAL_SUCCESS`/`TERMINAL_ERROR` is guaranteed for bridged sessions.
+ * Also documented in `WORKPLAN.md`'s Phase 7.5 entry and slated for
+ * `SECURITY.md`'s next revision.
  */
 
 const DEFAULT_MAX_QUEUE_DEPTH = 500;
@@ -101,25 +128,29 @@ export interface DaemonHandle {
   fsm: SessionFsm;
   queue: IngestionQueue;
   watcher: FSWatcher;
+  /** Phase 7.5 — the token-enforced bridge for `stenod attach` terminal sessions. */
+  ipcServer: IpcServer;
 }
 
 /**
  * Starts the ingestion daemon for `projectRoot`: acquires the Phase 2.1
- * workspace lock, opens/migrates the SQLite DB, and brings up the
- * filesystem (4.4) capture track wired through the shared IngestionQueue
- * (6.1/6.2).
+ * workspace lock, opens/migrates the SQLite DB, brings up the filesystem
+ * (4.4) capture track wired through the shared IngestionQueue (6.1/6.2),
+ * and (Phase 7.5) starts the Phase 2.3 IPC server, wired to the terminal
+ * bridge (`terminal-bridge.ts`).
  *
- * Terminal capture (5.3) is deliberately NOT started here — see the
- * "REGRESSION FIX" note in this file's header comment. There is currently
- * no mechanism to route real developer terminal input to a backgrounded
- * daemon's own capture track (Gap 3), so spawning one unconditionally only
- * produced an unreachable placeholder shell whose eventual kill-triggered
- * exit polluted every real handoff manifest with a synthetic node (Gap 4).
+ * Terminal capture is NOT spawned directly by the daemon — see the "Phase
+ * 7.5 addition" note in this file's header comment for why (Gap 3/Gap 4).
+ * A separate client (`stenod attach`) owns the actual PTY and reports
+ * results over the IPC connection this function now also starts.
  *
  * Throws `WorkspaceLockedError` (Phase 2.1) if a live daemon already owns
  * this root.
  */
-export function startDaemon(projectRoot: string, options: StartDaemonOptions = {}): DaemonHandle {
+export async function startDaemon(
+  projectRoot: string,
+  options: StartDaemonOptions = {}
+): Promise<DaemonHandle> {
   const resolvedRoot = attachWorkspace(projectRoot);
   const dir = stenoDir(resolvedRoot);
 
@@ -135,7 +166,12 @@ export function startDaemon(projectRoot: string, options: StartDaemonOptions = {
 
   const watcher = createFileStateCapture(db, fsm, resolvedRoot, queue);
 
-  return { projectRoot: resolvedRoot, stenoDir: dir, db, fsm, queue, watcher };
+  const ipcServer = createIpcServer(resolvedRoot, {
+    onMessage: createTerminalBridgeHandler(db, fsm, queue),
+  });
+  await ipcServer.listen();
+
+  return { projectRoot: resolvedRoot, stenoDir: dir, db, fsm, queue, watcher, ipcServer };
 }
 
 /**
@@ -171,12 +207,16 @@ async function waitForQueueDrain(
 
 /**
  * Cleanly stops a daemon started via `startDaemon()`:
- *   1. Stops the filesystem watcher (no new fs events after this).
+ *   1. Stops the filesystem watcher and the IPC server (Phase 7.5) — no new
+ *      fs events or `stenod attach` connections after this.
  *   2. Waits for every in-flight/queued write to settle.
  *   3. Closes the DB connection and releases the Phase 2.1 workspace lock.
  *
- * (No terminal process to kill — `startDaemon()` no longer spawns one; see
- * this file's header comment.)
+ * (No terminal process to kill — the daemon itself never spawns one; see
+ * this file's header comment. Any still-attached `stenod attach` client's
+ * shell keeps running in the client's own process; its eventual
+ * terminal-result report will simply fail to reach a stopped daemon, and
+ * the client surfaces that as a clear error rather than hanging silently.)
  *
  * Throws if the queue does not fully drain within the timeout — proceeding
  * to close the DB with writes still in flight would silently lose events,
@@ -190,6 +230,7 @@ export async function stopDaemon(
   options: StopDaemonOptions = {}
 ): Promise<void> {
   await handle.watcher.close();
+  await handle.ipcServer.close();
 
   const drained = await waitForQueueDrain(handle.queue, options);
   if (!drained) {

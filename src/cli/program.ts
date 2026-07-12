@@ -17,10 +17,13 @@ import { runMcpServer } from '../mcp/index.js';
 import {
   enableNetworkCapture,
   stopNetworkCapture,
+  disableNetworkCapture,
   PROVIDER_ALLOWLIST,
   UnsupportedPlatformError,
 } from '../network/index.js';
-import type { NetworkCaptureHandle } from '../network/index.js';
+import type { NetworkCaptureHandle, DisableNetworkCaptureResult } from '../network/index.js';
+import { attachTerminalSession } from './attach.js';
+import type { AttachSession } from './attach.js';
 /**
  * Polls until the Phase 2.1 PID lock file at `lockPath` disappears (i.e. the
  * daemon that owned it has released it via `detachWorkspace()` inside
@@ -98,7 +101,7 @@ program
       '--project-root flag the generated systemd/launchd unit (Phase 7.1) invokes this with'
   )
   .option('--foreground', 'Run in foreground (used internally by the detached daemon)')
-  .action((options: { projectRoot?: string; foreground?: boolean }) => {
+  .action(async (options: { projectRoot?: string; foreground?: boolean }) => {
     const root = options.projectRoot ?? process.cwd();
 
     try {
@@ -131,10 +134,14 @@ program
         return;
       }
 
-      const handle = startDaemon(root);
+      const handle = await startDaemon(root);
 
       console.log(`stenod daemon started for ${handle.projectRoot} (PID ${process.pid})`);
       console.log('Press Ctrl+C to stop, or run `stenod stop` from another terminal on this project.');
+      console.log(
+        'Filesystem events are captured automatically. To also capture a terminal session, ' +
+          'run `stenod attach` in the terminal you want captured — it is not automatic.'
+      );
 
       let shuttingDown = false;
       const shutdown = async (): Promise<void> => {
@@ -182,6 +189,72 @@ program
     } else {
       console.error(`stenod: timed out waiting for daemon (PID ${status.pid}) to stop.`);
       process.exitCode = 1;
+    }
+  });
+
+program
+  .command('attach')
+  .description('Attach an interactive shell to the running daemon, so this terminal session is captured')
+  .action(async () => {
+    const root = process.cwd();
+    if (!existsSync(stenoDir(root))) {
+      console.error(`stenod: no Stenod workspace found at ${root} — run \`stenod init\` first.`);
+      process.exitCode = 1;
+      return;
+    }
+
+    const status = getDaemonStatus(root);
+    if (!status.running) {
+      console.error(`stenod: no daemon running for ${root} — run \`stenod start\` first.`);
+      process.exitCode = 1;
+      return;
+    }
+
+    let session: AttachSession;
+    try {
+      session = await attachTerminalSession(root, {
+        cols: process.stdout.columns,
+        rows: process.stdout.rows,
+        onData: (chunk) => process.stdout.write(chunk),
+      });
+    } catch (err) {
+      console.error((err as Error).message);
+      process.exitCode = 1;
+      return;
+    }
+
+    console.log(
+      'stenod: attached — this terminal session will be captured. Exit the shell (or Ctrl+D) to end the session.'
+    );
+
+    const isRawCapable = Boolean(process.stdin.isTTY);
+    const wasRaw = isRawCapable ? process.stdin.isRaw : false;
+    if (isRawCapable) {
+      process.stdin.setRawMode(true);
+    }
+    process.stdin.resume();
+
+    const onStdin = (chunk: Buffer): void => session.write(chunk.toString('utf8'));
+    process.stdin.on('data', onStdin);
+
+    const onResize = (): void => {
+      session.resize(process.stdout.columns ?? 80, process.stdout.rows ?? 24);
+    };
+    process.stdout.on('resize', onResize);
+
+    try {
+      const { exitCode } = await session.closed;
+      console.log(`stenod: session ended (exit code ${exitCode}) — captured.`);
+    } catch (err) {
+      console.error((err as Error).message);
+      process.exitCode = 1;
+    } finally {
+      process.stdin.off('data', onStdin);
+      process.stdout.off('resize', onResize);
+      if (isRawCapable) {
+        process.stdin.setRawMode(wasRaw);
+      }
+      process.stdin.pause();
     }
   });
 
@@ -420,5 +493,48 @@ program
   .command('disable-network-capture')
   .description('Fully revert the CA trust and proxy settings')
   .action(() => {
-    console.log('Not yet implemented');
+    const root = process.cwd();
+    if (!existsSync(stenoDir(root))) {
+      console.error(`stenod: no Stenod workspace found at ${root} — run \`stenod init\` first.`);
+      process.exitCode = 1;
+      return;
+    }
+
+    let result: DisableNetworkCaptureResult;
+    try {
+      result = disableNetworkCapture(root);
+    } catch (err) {
+      if (err instanceof UnsupportedPlatformError) {
+        console.error(err.message);
+      } else if (err instanceof Error) {
+        console.error(err.message);
+      } else {
+        console.error(String(err));
+      }
+      process.exitCode = 1;
+      return;
+    }
+
+    if (!result.wasEnabled) {
+      console.log('stenod: network capture was not enabled for this project — nothing to revert.');
+      return;
+    }
+
+    console.log(`Trust store removal: ${result.uninstallResult?.success ? 'succeeded' : 'FAILED'}.`);
+    console.log(`Confirmed removed from trust store: ${result.confirmedRemoved ? 'yes' : 'no'}.`);
+    if (!result.confirmedRemoved) {
+      console.error(
+        'stenod: the CA may still be present in your OS trust store. ' +
+          (result.uninstallResult?.stderr || '(no stderr output)')
+      );
+      process.exitCode = 1;
+      return;
+    }
+
+    console.log('Local CA removed from this project (.stenod/ca/ deleted).');
+    console.log('If you set HTTP_PROXY/HTTPS_PROXY for network capture, unset them now:');
+    console.log('  unset HTTP_PROXY HTTPS_PROXY');
+    console.log(
+      'If `stenod enable-network-capture` is still running in another terminal, stop it there too (Ctrl+C).'
+    );
   });
