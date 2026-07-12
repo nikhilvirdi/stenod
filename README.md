@@ -1,5 +1,8 @@
 # Stenod
 
+<img width="1280" height="640" alt="stenod (1)" src="https://github.com/user-attachments/assets/de2bdd63-0cb7-447a-a2cb-f1ac3525748d" />
+
+
 A black box recorder for your AI coding sessions.
 
 AI-assisted coding sessions collapse at boundaries — rate limits, provider outages, context-window exhaustion, or a developer deliberately switching tools mid-task. What's lost at that moment isn't just chat history; it's the *reasoning*: which decisions were made and why, which approaches were tried and rejected, and what you were mid-way through doing.
