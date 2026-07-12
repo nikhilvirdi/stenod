@@ -7,6 +7,15 @@
   "bin": {
     "stenod": "dist/cli/bin.js"
   },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "!dist/**/*.test.js",
+    "!dist/**/*.test.d.ts",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
   "scripts": {
     "build": "tsc && node scripts/copy-worker-assets.mjs",
     "test": "vitest run",
