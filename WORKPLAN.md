@@ -189,7 +189,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | # | Phase | Depends on | Status |
 |---|---|---|---|
 | 15.1 | Claude Code hook payload spike | 14.3 | Verified |
-| 15.2 | Antigravity brain-folder spike | 14.3 | Not Started |
+| 15.2 | Antigravity brain-folder spike | 14.3 | Verified |
 | 16.1 | `DECISION` node type + `resolution`/`resolution_reason` columns | 15.1, 15.2 | Not Started |
 | 16.2 | `source_tool`/`git_branch` columns + `SHADOWED` status + `RESOLVES` edge type | 16.1 | Not Started |
 | 16.3 | Migration + backfill + round-trip tests | 16.2 | Not Started |
@@ -267,10 +267,30 @@ Per `AGENTS.md`'s Verification section: this milestone is validation only, and e
 - **ARCHITECTURE ref:** §7.1
 - **Build:** run a comparable session in Google Antigravity on a throwaway project, then inspect the resulting `~/.gemini/antigravity/brain/<conversation-id>/` folder directly — the JSONL transcript and the markdown artifacts (`implementation_plan.md`, `task.md`, `walkthrough.md`).
 - **Done when:**
-  - [ ] Written answer to: what does the JSONL transcript actually contain, and how does it map to a real session's events
-  - [ ] Written answer to: how much of a decision's reasoning appears in the markdown artifacts versus the transcript
-  - [ ] Written answer to: what identifies which project a given brain-folder conversation belongs to
+  - [x] Written answer to: what does the JSONL transcript actually contain, and how does it map to a real session's events
+  - [x] Written answer to: how much of a decision's reasoning appears in the markdown artifacts versus the transcript
+  - [x] Written answer to: what identifies which project a given brain-folder conversation belongs to
 - **Verify:** review the captured folder contents directly against the three questions above. Consolidate 15.1 and 15.2's findings into `docs/spike-capture-surfaces.md`, the reference every later capture phase cites.
+
+**15.2 — Antigravity brain-folder spike: VERIFIED**
+
+Findings:
+- transcript.jsonl (at antigravity-ide/brain/<id>/.system_generated/logs/)
+  contains full verbatim USER_INPUT.content — solves the user-prompt-text
+  gap found in Claude Code's hooks (see 15.1).
+- MODEL PLANNER_RESPONSE steps include a full `thinking` field — richer
+  reasoning trace than any Claude Code hook payload provides.
+- tool_calls carry full args, same richness as PostToolUse.
+- EPHEMERAL_MESSAGE system-reminder blocks repeat verbatim on most turns —
+  noise, must be filtered during parsing, not treated as signal.
+- step_index has gaps in the raw file — parser must not assume dense
+  sequential indices.
+- implementation_plan.md / task.md / walkthrough.md are conditional, not
+  guaranteed per conversation — this session had neither, only the JSONL
+  transcripts existed.
+- Correct real path is ~/.gemini/antigravity-ide/brain/<id>/ when running
+  inside the IDE, not ~/.gemini/antigravity/brain/ as originally assumed
+  in ARCHITECTURE.md §7.1 — needs a correction there.
 
 ---
 
