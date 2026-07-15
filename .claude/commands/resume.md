@@ -3,8 +3,8 @@ description: Resume work after a session gap — reads status, tells you what's 
 allowed-tools: Read, Grep, Glob, Bash(git log*), Bash(git status)
 ---
 
-Read WORKPLAN.md's Master Status Tracker and STENOD_SSOT.md's Appendix
-(§14) in full.
+Read WORKPLAN.md's Master Status Tracker and ARCHITECTURE.md's Design
+Decision Log (§16) in full.
 
 Report, concisely:
 1. The last phase marked `Verified`, and the git log entry that matches it.

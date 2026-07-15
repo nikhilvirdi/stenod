@@ -3,6 +3,7 @@
         "defaultMode": "plan",
         "allow": [
             "Bash(npm install)",
+            "Bash(npm install*)",
             "Bash(npm ci)",
             "Bash(npm test*)",
             "Bash(npm run lint*)",
@@ -13,7 +14,13 @@
             "Bash(git log*)",
             "Bash(git add*)",
             "Bash(git commit*)",
-            "Read(./**)"
+            "Read(./**)",
+            "Edit(src/**)",
+            "Write(src/**)",
+            "Edit(docs/**)",
+            "Write(docs/**)",
+            "Edit(WORKPLAN.md)",
+            "Write(WORKPLAN.md)"
         ],
         "deny": [
             "Read(./.env*)",
