@@ -1,74 +1,80 @@
 # Stenod — WORKPLAN.md
-**Status:** Canonical execution roadmap. Companion to `STENOD_SSOT.md`, which remains the source of truth for *why* every decision was made. This document governs *what gets built, in what order, and how each piece is proven correct.*
+**Status:** Canonical execution roadmap. Companion to `ARCHITECTURE.md`, which remains the source of truth for *why* every decision was made. This document governs *what gets built, in what order, and how each piece is proven correct.*
 
 This is a living document. Update the status table as phases complete. It should always reflect real, current progress — not a plan frozen in time.
+
+**A note on what changed here.** Stenod 1.0 (phases 0.1–14.3) is complete and Verified. Its full build specs — the original Build/Do NOT/Done when/Verify detail for each phase — have been retired from this document now that the work is shipped, tested, and stable; nobody needs to re-derive how to build a table that's been in production for months. What's kept is the **Master Status Tracker**, in full, including every verification note — that's the part with lasting value, since it's the record of what actually happened, including three real bugs implementation surfaced that no design review could have caught. If the original build-spec detail is ever needed, it's in git history. Everything from Milestone 15 onward is new, unbuilt, and gets the full spec treatment, same rigor as 1.0 originally had.
 
 ---
 
 ## How To Use This Document
 
-**One phase per Antigravity request. Never more.** This is the core anti-drift mechanism — a model implementing five phases in one pass is exactly how scope creep and inconsistency enter a codebase. Small, verifiable, one at a time.
+**One phase per implementation pass. Never more.** This is the core anti-drift mechanism — an agent implementing five phases in one pass is exactly how scope creep and inconsistency enter a codebase. Small, verifiable, one at a time.
+
+**Roles, per `AGENTS.md`:** Claude Code is the primary implementer — complex phases (capture internals, the interpretation cascade, storage schema, compiler logic) route there. Antigravity handles verification, documentation, and simple, well-scoped coding tasks; it does not implement complex phases. Whichever agent implements a given phase, the *other* one verifies it — that separation is the point, not a formality.
 
 **Workflow:**
 1. Pick the next `Not Started` phase from the status table (respect the `Depends on` column — never start a phase whose dependency isn't `Verified`).
-2. Copy the **Antigravity prompt template** below, fill in the phase number, paste it into Antigravity along with the phase's full entry from this document.
-3. When Antigravity reports done, bring the result to Claude using the **verification prompt template** below.
-4. Claude checks the output against that phase's "Done when" checklist and `STENOD_SSOT.md` section, reports PASS/FAIL per item.
+2. If it's a complex phase, use the Claude Code prompt template below; if it's a simple/doc phase, Antigravity can implement directly using the same shape of prompt.
+3. When the implementer reports done, bring the result to the *other* agent using the verification prompt template.
+4. The verifier checks the output against that phase's "Done when" checklist and the relevant `ARCHITECTURE.md` section, reports PASS/FAIL per item, with fresh eyes.
 5. Mark the phase `Verified` in the status table only after an explicit PASS. Only then start the next phase.
 
 This is designed so a session reset costs nothing — reopen this file, find the last `Verified` phase, start the next one. No re-explaining.
 
-### Antigravity Prompt Template
+### Implementer Prompt Template
 ```
 Implement ONLY Phase [X.Y] — [Name] from WORKPLAN.md. Do not implement
 any other phase, even if it seems related or convenient to do together.
 
-Before writing code, read STENOD_SSOT.md §[ref] and this phase's full
+Before writing code, read ARCHITECTURE.md §[ref] and this phase's full
 entry in WORKPLAN.md.
 
 Build exactly what "Build:" describes. Use exactly the libraries listed
 in "Locked Technology Decisions" — do not substitute or add dependencies
 not already listed there. Respect "Do NOT" exactly as written.
 
-If anything here seems ambiguous, missing, or inconsistent with the SSOT,
-stop and ask instead of guessing or improvising a fix.
+If anything here seems ambiguous, missing, or inconsistent with
+ARCHITECTURE.md or AGENTS.md, stop and ask instead of guessing or
+improvising a fix.
 
 When finished, report each "Done when" item and how you verified it.
 ```
 
-### Claude Verification Prompt Template
+### Verifier Prompt Template
 ```
-Antigravity finished Phase [X.Y] — [Name]. Here's what it built:
+[Implementer] finished Phase [X.Y] — [Name]. Here's what it built:
 [paste code / diff / test output / files]
 
 Check this against Phase [X.Y]'s "Done when" checklist in WORKPLAN.md
-and STENOD_SSOT.md §[ref]. Report PASS/FAIL per checklist item, and
+and ARCHITECTURE.md §[ref]. Report PASS/FAIL per checklist item, and
 flag anything that looks like drift from spec even if not explicitly
 on the checklist.
 ```
 
 ### Execution Discipline (how to run this without stalling or drifting)
 
-**Verification gates progress on the deterministic core, not on Antigravity's ability to keep building.** Antigravity can move through sequential phases without waiting for Claude's sign-off each time — mark each `Built (unverified)` in the status table as it's finished. What matters is that nothing gets marked `Verified` without an actual Claude check against that phase's checklist.
+**Verification gates progress on the deterministic core, not on the implementer's ability to keep building.** The implementer can move through sequential phases without waiting for sign-off each time — mark each `Built (unverified)` in the status table as it's finished. What matters is that nothing gets marked `Verified` without an actual check from the other agent against that phase's checklist.
 
-**When Claude is available again, verify in dependency order starting from the earliest `Built (unverified)` phase.** If that phase fails verification, stop — do not verify phases built after it. Anything built on top of an unverified-and-then-failed phase is suspect by construction, even if it looks correct in isolation. Fix and re-verify the failed phase first, then resume checking forward.
+**Verify in dependency order, starting from the earliest `Built (unverified)` phase.** If that phase fails verification, stop — do not verify phases built after it. Anything built on top of an unverified-and-then-failed phase is suspect by construction, even if it looks correct in isolation. Fix and re-verify the failed phase first, then resume checking forward.
 
 **Silent regression guard:** if a phase's implementation touches any file outside that phase's own listed scope — especially a file belonging to an already-`Verified` phase — treat that as a flag, not a bonus fix. Revert the earlier phase's status to unverified and re-check it before proceeding.
 
 **Git discipline:** one commit per phase that reaches `Verified` status (not per `Built`), commit message referencing the phase number and name. This gives a clean, bisectable history and an exact rollback point if a later phase reveals an earlier one was subtly wrong.
 
-**Resuming after a session gap:** if the original chat is still usable, stay in it. If not, open a new one, attach this file and `STENOD_SSOT.md`, and open with: *"Resuming Stenod. Check the Master Status Tracker — last Verified phase is [X.Y]. I need you to [verify Antigravity's output for phase Y.Z / help me start phase Y.Z]."* These two documents exist specifically so that prompt is all a fresh session ever needs.
+**Resuming after a session gap:** if the original chat is still usable, stay in it. If not, open a new one, attach this file and `ARCHITECTURE.md`, and open with: *"Resuming Stenod. Check the Master Status Tracker — last Verified phase is [X.Y]. I need you to [verify the implementer's output for phase Y.Z / help me start phase Y.Z]."* These two documents exist specifically so that prompt is all a fresh session ever needs.
 
 ---
 
 ## Global Rules (apply to every phase, stated once here so they don't need repeating)
 
-1. Read `STENOD_SSOT.md` in full before the first phase of any session; re-read the referenced section before each individual phase.
+1. Read `ARCHITECTURE.md` in full before the first phase of any session; re-read the referenced section before each individual phase. Read `AGENTS.md` for the complete non-negotiable list — the ones most load-bearing for the new phases below are restated at the point they apply.
 2. One phase per implementation pass. No exceptions for "it's quick" or "they're related."
-3. Never invent tables, CLI commands, config options, or dependencies not already in the SSOT or this document. A gap is a reason to stop and ask, not to improvise.
+3. Never invent tables, CLI commands, config options, or dependencies not already in `ARCHITECTURE.md` or this document. A gap is a reason to stop and ask, not to improvise.
 4. Every phase that produces logic (not pure config/scaffolding) ships with tests in the same pass. A phase without passing tests is not done, regardless of what the code appears to do.
 5. If a phase's own "Done when" checklist can't be fully satisfied, the phase is incomplete — report exactly which items failed, don't mark it done with caveats.
 6. Determinism is a hard constraint throughout: same input state must always produce the same output. Anything that introduces randomness, wall-clock-dependent branching (beyond the explicit decay/timeout logic already specified), or unlisted external calls is out of bounds.
+7. **New, for the 2.0 phases specifically:** a hook script must never block the tool it's watching (fire-and-forget, spool on daemon-down); never write to a tool's own rule/instruction files (read-and-flag only); the AI tie-breaker only ever runs on the user's own key, only at handoff time, never automatically; no Python or second runtime, under any argument; the companion dashboard is localhost-only, permanently, no exceptions.
 
 ---
 
@@ -91,14 +97,18 @@ Stated once here — phases reference this table rather than re-specifying, so t
 | JS/TS grammars | `tree-sitter-javascript`, `tree-sitter-typescript` | 0.25.0 / 0.23.2 |
 | MCP server library | `@modelcontextprotocol/sdk` | 1.29.0 |
 | Linting / formatting | `eslint` + `@typescript-eslint`, `prettier` | latest at implementation time |
+| Deterministic text interpretation (Layer 1) | `wink-nlp` + its pinned language model package | verify current version at implementation time; pin both to a Node version confirmed in CI, since the model package version-locks to specific Node versions |
+| Tier-C format parser (Cursor's undocumented chat storage) | not yet locked | pending the license/maintenance/footprint vetting specified in Phase 23.2 — do not add to this table until that phase completes |
 
-All versions confirmed to exist on the npm registry at planning time (July 2026). Re-verify current versions at implementation time — don't assume these exact patch versions are still current, just that these are the correct packages.
+All versions confirmed to exist on the npm registry at planning time (July 2026), except `wink-nlp`'s, which needs its own check. Re-verify current versions at implementation time — don't assume these exact patch versions are still current, just that these are the correct packages.
 
 ---
 
 ## Master Status Tracker
 
-Update this table as work progresses. Status values: `Not Started`, `In Progress`, `Built (unverified)`, `Verified`.
+Update this table as work progresses. Status values: `Not Started`, `In Progress`, `Built (unverified)`, `Verified`, `Blocked`.
+
+### Stenod 1.0 — complete, preserved as historical record
 
 | # | Phase | Depends on | Status |
 |---|---|---|---|
@@ -121,7 +131,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 3.3 | LWW conflict resolution | 3.1 | Verified |
 | 3.4 | Time-windowed rejection logic | 3.1 | Verified |
 | 3.5 | Anti-rot timeout logic | 3.1 | Verified |
-| 4.1 | chokidar watcher + ignore-list | 2.3, 3.1 | Verified � regression fixed (.stenod/ self-watch bug) |
+| 4.1 | chokidar watcher + ignore-list | 2.3, 3.1 | Verified — regression fixed (.stenod/ self-watch bug) |
 | 4.2 | web-tree-sitter integration (JS/TS) | 4.1 | Verified |
 | 4.3 | Constraint comment syntax parser | 4.2 | Verified |
 | 4.4 | `FILE_STATE` node creation + graph write | 4.2, 3.1 | Verified |
@@ -158,7 +168,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 10.4 | Wire `stenod handoff` (+worked/failed) | 10.3, 9.3 | Verified |
 | 10.5 | Wire `stenod reject --since` | 10.4, 3.4 | Verified |
 | 10.6 | Wire `stenod anchor` | 10.4 | Verified |
-| 10.7 | Full end-to-end integration test | 10.6 | Verified � Gap 4 fixed at root cause, re-verified |
+| 10.7 | Full end-to-end integration test | 10.6 | Verified — Gap 4 fixed at root cause, re-verified |
 | 11.1 | Identifier extraction utility | 10.7 | Verified |
 | 11.2 | Exact-identifier recall calculator | 11.1 | Verified |
 | 11.3 | Dev-only evaluation harness script | 11.2 | Verified |
@@ -168,776 +178,526 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 | 12.4 | Wire `stenod enable-network-capture` | 12.3 | Verified — src/network/enable-capture.ts orchestrates 12.1 (generateRootCa/persistRootCa/installTrustStore) → 12.2 (createProviderCaptureProxy/start) → 12.3 (attachProviderCapture) in correct sequence with real types (no mismatches). Clear user explanation shown before acting. Fixed a genuine DB-connection-leak bug found during testing (try/catch closes DB + stops proxy on any failure). NOT wired into init/start. ca.ts/trust-store.ts/proxy.ts/provider-capture.ts confirmed untouched; program.ts changes confirmed additive only. Independently cross-reviewed by Antigravity (code-level PASS on all 6 checkable items, sandbox-limited on execution) + Supervisor's own local test run: 58/58 files, 416 passed, 2 skipped, 0 failed, src/cli/e2e.test.ts (Phase 10.7) individually reconfirmed passing. |
 | 12.5 | Wire `stenod disable-network-capture` + uninstall test | 12.4 | Verified — disableNetworkCapture() correctly sequences uninstallTrustStore() → verifyTrustStoreInstall() (OS-level confirmation) → conditional rmSync of .stenod/ca/, only on confirmed removal (never discards the CA from disk unless the OS genuinely no longer trusts it). Fresh enable→disable→enable cycle test passes cleanly. ca.ts/proxy.ts/provider-capture.ts/enable-capture.ts confirmed untouched; program.ts additions confirmed additive only. vi.clearAllMocks() fix correctly present in this phase's own test file (Phase 12.4's test file still has the same latent gap, flagged for a future separate cleanup pass). Independently cold-reviewed by Antigravity (all 5 checkable items PASS) + Supervisor's own local run: 59 files, 426 passed, 3 skipped, 0 failed, including src/cli/disable-network-capture.test.ts (6/6) and src/cli/e2e.test.ts (Phase 10.7). |
 | 13.1 | MCP resource exposure of handoff | 10.7 | Verified — src/mcp/server.ts exposes stenod://handoff/manifest via McpServer/StdioServerTransport, calling the real compileManifest() pipeline (Phase 8.9/8.10) and writeManifestLogEntry (Phase 9.2), not a stub. Clipboard delivery (Phase 9.1) confirmed byte-for-byte unchanged; program.ts's mcp command is purely additive. Manifest content confirmed genuine post-Phase 8.10 (CONSTRAINT node's real text verified present, not just metadata). @modelcontextprotocol/sdk correctly declared/used, pre-authorized in Locked Technology Decisions. Independently verified by Claude Code (roles reversed — Antigravity was implementer): all six checklist items PASS with direct code/test evidence, not self-report. Committed as 470c2db. |
-| 14.1 | `SECURITY.md` | 12.5 | Not Started |
-| 14.2 | Final README pass | 14.1 | Not Started |
-| 14.3 | npm publish dry-run + package.json review | 14.2 | Not Started |
+| 14.1 | `SECURITY.md` | 12.5 | Verified — plain-language doc, all claims verified against real code (grep'd actual call sites, not comments). Correctly identifies stenod attach as the terminal-capture mechanism (post-7.5), IPC auth as genuinely active, and the Phase 5.4 heuristic gap for bridged sessions. Independently confirmed accurate by Antigravity. |
+| 14.2 | Final README pass | 14.1 | Verified — full command reference matches src/cli/program.ts exactly. Walkthrough independently confirmed by Supervisor: real init → start → status → handoff sequence run in a fresh temp directory, all worked as documented. Pre-publish npm link note added after walkthrough revealed bare `stenod` command requires global install/link first. CI #82 green. |
+| 14.3 | npm publish dry-run + package.json review | 14.2 | Verified — fixed a real packaging leak (397 files/1.6MB → 133 files/125.0kB): added package.json "files" allowlist + tsconfig.json test exclusion, removing all source .ts, test files, WORKPLAN.md/ARCHITECTURE.md/CLAUDE.md, and dev tooling from the shipped package. Verified via full suite (442 passed, 3 skipped), npm pack + extract + fresh install + running the CLI (--version, --help) from the extracted tarball alone. CI #81 green. |
 
-66 phases total. Deliberately granular enough that no phase requires more than one clear judgment call, and coarse enough that "one phase" still means "one real, testable unit of the system" — not an arbitrarily sliced line of code.
+66 phases total, all Verified except the one host-blocked item. Deliberately granular enough that no phase required more than one clear judgment call, and coarse enough that "one phase" still meant "one real, testable unit of the system."
 
----
+### Stenod 2.0 — the multi-tool expansion, in progress
 
-## Milestone 0 — Repo Foundation
-
-#### Phase 0.1 — Project Init
-- **Depends on:** —
-- **SSOT ref:** §7, §11
-- **Build:** Node.js + TypeScript project, strict mode enabled in `tsconfig.json`. Folder structure with clean module boundaries: `src/capture/`, `src/storage/`, `src/compiler/`, `src/cli/`, `src/delivery/`. `package.json` with name `stenod`, MIT license field.
-- **Do NOT:** Add any runtime dependency not in the Locked Technology Decisions table yet — this phase is scaffolding only.
-- **Done when:**
-  - [ ] `npm install` succeeds with zero dependencies beyond TypeScript/dev tooling
-  - [ ] `tsc --noEmit` passes on an empty project
-  - [ ] Folder structure matches exactly
-- **Verify:** inspect `package.json` and folder tree directly.
-
-#### Phase 0.2 — README + LICENSE
-- **Depends on:** 0.1
-- **SSOT ref:** §11
-- **Build:** `README.md` — brief, one paragraph on what Stenod is, link to `STENOD_SSOT.md` for full detail. `LICENSE` — MIT, standard text.
-- **Do NOT:** Write `CONTRIBUTING.md` or any contribution-facing docs — explicitly out of scope per SSOT §11 for now.
-- **Done when:**
-  - [ ] README exists, under ~30 lines, links to SSOT
-  - [ ] LICENSE is valid, standard MIT text with correct year/holder
-- **Verify:** read both files directly.
-
-#### Phase 0.3 — Test Framework Setup
-- **Depends on:** 0.1
-- **SSOT ref:** §7
-- **Build:** `vitest` configured, `npm test` script wired, one trivial placeholder test proving the harness runs.
-- **Done when:**
-  - [ ] `npm test` runs and passes on the placeholder test
-- **Verify:** run `npm test`.
-
-#### Phase 0.4 — Lint/Format Setup
-- **Depends on:** 0.1
-- **SSOT ref:** (infra hygiene, not explicitly in SSOT — standard baseline to prevent technical debt per your own stated goal)
-- **Build:** `eslint` + `@typescript-eslint`, `prettier`, basic config, `npm run lint` script.
-- **Done when:**
-  - [ ] `npm run lint` runs clean on the empty scaffold
-- **Verify:** run `npm run lint`.
-
-#### Phase 0.5 — CI Pipeline
-- **Depends on:** 0.3, 0.4
-- **SSOT ref:** (infra hygiene, not in SSOT — same category as 0.4, a
-  standard baseline that supports the project's stated no-technical-debt goal)
-- **Build:** a GitHub Actions workflow (`.github/workflows/ci.yml`) that
-  runs on every push and pull request to `main`: `npm ci`, `npm run lint`,
-  `npm test`. Nothing beyond that — no deploy step, no npm publish. CD
-  (publishing) stays a manual, deliberate step per Phase 14.3, not automated.
-- **Do NOT:** add a publish/deploy step. Do NOT add build matrix testing
-  across multiple OSes yet — this project is already Unix/Mac-only for
-  several capture-layer phases (per SSOT §9), so a single Ubuntu runner
-  is the correct scope for now. Do NOT add coverage reporting, badges,
-  or anything beyond lint+test — those are separate, later decisions.
-- **Done when:**
-  - A push to a branch triggers the workflow and shows pass/fail status
-    on GitHub
-  - A deliberately broken test or lint violation, pushed to a test
-    branch, causes the workflow to fail visibly
-- **Verify:** push a real commit and confirm the Actions tab shows a
-  run; optionally push one deliberate failure to confirm red status
-  actually appears, then revert it.
+| # | Phase | Depends on | Status |
+|---|---|---|---|
+| 15.1 | Claude Code hook payload spike | 14.3 | Not Started |
+| 15.2 | Antigravity brain-folder spike | 14.3 | Not Started |
+| 16.1 | `DECISION` node type + `resolution`/`resolution_reason` columns | 15.1, 15.2 | Not Started |
+| 16.2 | `source_tool`/`git_branch` columns + `SHADOWED` status + `RESOLVES` edge type | 16.1 | Not Started |
+| 16.3 | Migration + backfill + round-trip tests | 16.2 | Not Started |
+| 17.1 | Hook-script router (per-project resolution) | 16.3 | Not Started |
+| 17.2 | `stenod integrate` / `stenod detach` CLI commands | 17.1 | Not Started |
+| 18.1 | `wink-nlp` integration | 16.3 | Not Started |
+| 18.2 | Layer 1 deterministic rule pass | 18.1 | Not Started |
+| 18.3 | Topic-identity matching ladder | 18.2 | Not Started |
+| 18.4 | `DECISION` node creation wired to Layer 0 | 16.3, 3.1, 3.3 | Not Started |
+| 18.5 | Layer 2 optional AI tie-breaker client | 18.3 | Not Started |
+| 18.6 | Interpretation cascade integration test | 18.4, 18.5 | Not Started |
+| 19.1 | Claude Code hook receiver | 17.2, 18.6, 15.1 | Not Started |
+| 19.2 | `PreCompact` snapshot handling | 19.1 | Not Started |
+| 19.3 | Claude Code integration end-to-end test | 19.2 | Not Started |
+| 20.1 | Codex hook receiver | 17.2, 18.6 | Not Started |
+| 20.2 | Codex integration end-to-end test | 20.1 | Not Started |
+| 21.1 | Kiro hook receiver | 17.2, 18.6 | Not Started |
+| 21.2 | Kiro spec-file reader (`requirements.md`/`design.md`/`tasks.md`) | 21.1 | Not Started |
+| 21.3 | Kiro integration end-to-end test | 21.2 | Not Started |
+| 22.1 | Antigravity auxiliary watch-path registration | 17.2, 15.2 | Not Started |
+| 22.2 | Conversation-to-project matching | 22.1 | Not Started |
+| 22.3 | Brain-folder reader | 22.2, 18.6 | Not Started |
+| 22.4 | Antigravity integration end-to-end test | 22.3 | Not Started |
+| 23.1 | Cursor agent hook receiver | 17.2, 18.6 | Not Started |
+| 23.2 | Vet and lock a Tier-C parser for Cursor's chat storage | 23.1 | Not Started |
+| 23.3 | Tier-C adapter wrapper | 23.2 | Not Started |
+| 23.4 | Cursor integration end-to-end test | 23.1, 23.3 | Not Started |
+| 24.1 | `source_tool` provenance retrofit (4.x/5.x + 19–23) | 19.3, 20.2, 21.3, 22.4, 23.4 | Not Started |
+| 24.2 | Reasoning-to-file-event pinning | 24.1 | Not Started |
+| 24.3 | Double-capture shadowing | 24.1 | Not Started |
+| 24.4 | Same-file/same-second collision flagging | 24.2 | Not Started |
+| 24.5 | Cross-tool merge integration test | 24.3, 24.4 | Not Started |
+| 25.1 | Dependency-manifest watcher | 16.3, 4.1 | Not Started |
+| 25.2 | Dependency `DECISION` node creation | 25.1, 18.4 | Not Started |
+| 26.1 | Rule-file reader + scoreboard comparison | 18.4 | Not Started |
+| 26.2 | Persistent, event-driven flag surfacing | 26.1 | Not Started |
+| 27.1 | `--full` / `--new` handoff flags | 24.5 | Not Started |
+| 27.2 | Rejection one-liner tiering (extends 8.10) | 27.1, 8.10 | Not Started |
+| 27.3 | Default-to-`--full` + `--new` hint line | 27.2 | Not Started |
+| 28.1 | Extend recall calculator to multi-tool capture | 24.5, 11.2 | Not Started |
+| 29.1 | Antigravity cross-verification of the 2.0 reference docs | 27.3 | Not Started |
 
 ---
 
-## Milestone 1 — Storage Layer
+## Milestone 15 — Capture-Surface Spike
 
-#### Phase 1.1 — SQLite Connection + WAL Pragmas
-- **Depends on:** 0.1
-- **SSOT ref:** §6.2
-- **Build:** `better-sqlite3` connection module. On open: `PRAGMA journal_mode=WAL`, `PRAGMA synchronous=NORMAL`, `PRAGMA cache_size=-64000`, `PRAGMA foreign_keys=ON`. The FK pragma is set here (not in individual schema files) because it is a per-connection runtime setting that every schema table with `REFERENCES` clauses depends on.
-- **Do NOT:** Create any tables yet.
-- **Done when:**
-  - [ ] Connection opens against a fresh file
-  - [ ] All three WAL pragmas confirmed active via query after open (`journal_mode=wal`, `synchronous=1`, `cache_size=-64000`)
-  - [ ] `PRAGMA foreign_keys` confirmed ON after open
-- **Verify:** test asserting `PRAGMA journal_mode` returns `wal`, etc.
+Per `AGENTS.md`'s Verification section: this milestone is validation only, and every capture phase from Milestone 19 onward cites its output rather than the assumptions made during design. If real payloads carry less reasoning text than assumed, later phases recalibrate — the interpretation cascade already degrades safely (more falls to Layer 1, or to `OPEN`).
 
-#### Phase 1.2 — `graph_nodes` Table
-- **Depends on:** 1.1
-- **SSOT ref:** §6.2
-- **Build:** exact schema — `id` (TEXT PK), `event_id` (INTEGER), `type` (ENUM: `FILE_STATE`, `TERMINAL_ERROR`, `TERMINAL_SUCCESS`, `PROVIDER_CAPTURE`, `CONSTRAINT`), `content` (TEXT), `fsm_state` (ENUM: `IDE_IDLE`, `RUNTIME_ERR`, `DOC_EDIT`, `DIFF_SUBMIT`, `PROVISIONAL_PANIC`), `constraint_key` (TEXT, nullable), `status` (ENUM: `ACTIVE`, `REJECTED`, `SUPERSEDED`), `source_file` (TEXT, nullable), `created_at` (INTEGER).
-- **Do NOT:** Build `graph_edges` or `manifest_log` yet. Do not add columns beyond this list.
+#### Phase 15.1 — Claude Code Hook Payload Spike
+- **Depends on:** 14.3
+- **ARCHITECTURE ref:** §7.1
+- **Build:** on a throwaway project, wire the minimal set of Claude Code hooks (`SessionStart`, `PostToolUse`, `PreCompact`, `Stop`) to append their full, raw JSON payload to a local file — no parsing, no daemon integration, just capture the ground truth. Run a realistic ~20-minute session: make a decision, reject an approach mid-way, run a failing then a passing command, and try to trigger a compaction.
+- **Do NOT:** wire this into the actual daemon or write any production capture code — this phase produces a reference document, not shipped code.
 - **Done when:**
-  - [ ] Table creates cleanly
-  - [ ] All 9 columns present, correct types
-  - [ ] Enum values enforced (CHECK constraint or app-layer — document which choice was made)
-- **Verify:** `.schema graph_nodes` inspection + insert/select test.
+  - [ ] Real payloads captured for all four hook events
+  - [ ] Written answer to: how much of the assistant's own reasoning text rides along in each event, if any
+  - [ ] Written answer to: does `PreCompact` deliver actual pre-compaction content, or only a signal that compaction is about to happen
+  - [ ] Written answer to: what session/timestamp/branch metadata is actually present in each payload
+- **Verify:** review the captured payload samples directly against the four questions above.
 
-#### Phase 1.3 — `graph_edges` Table
-- **Depends on:** 1.1
-- **SSOT ref:** §6.2
-- **Build:** exact schema — `id` (TEXT PK), `from_node_id`/`to_node_id` (TEXT, FK to `graph_nodes.id`), `edge_type` (ENUM: `REPLACES`, `CAUSED_BY`, `CONTRADICTS`, `DEPENDS_ON`), `created_at` (INTEGER).
+#### Phase 15.2 — Antigravity Brain-Folder Spike
+- **Depends on:** 14.3
+- **ARCHITECTURE ref:** §7.1
+- **Build:** run a comparable session in Google Antigravity on a throwaway project, then inspect the resulting `~/.gemini/antigravity/brain/<conversation-id>/` folder directly — the JSONL transcript and the markdown artifacts (`implementation_plan.md`, `task.md`, `walkthrough.md`).
 - **Done when:**
-  - [ ] Table creates cleanly, FK constraints active
-  - [ ] Insert fails on a `from_node_id`/`to_node_id` that doesn't exist in `graph_nodes`
-- **Verify:** FK-violation test + valid insert/select test.
-
-#### Phase 1.4 — `manifest_log` Table
-- **Depends on:** 1.1
-- **SSOT ref:** §6.2
-- **Build:** exact schema — `id` (TEXT PK), `created_at` (INTEGER), `node_ids` (TEXT, JSON array), `token_count` (INTEGER), `outcome` (ENUM nullable: `WORKED`, `FAILED`).
-- **Done when:**
-  - [ ] Table creates cleanly
-  - [ ] `outcome` accepts NULL and both enum values, rejects anything else
-- **Verify:** insert/select round-trip test including NULL outcome case.
-
-#### Phase 1.5 — Schema Versioning
-- **Depends on:** 1.2, 1.3, 1.4
-- **SSOT ref:** §6.2
-- **Build:** `PRAGMA user_version` tracking + a migration runner that applies pending migrations in order on connect.
-- **Done when:**
-  - [ ] Fresh DB ends at the current expected version
-  - [ ] Runner is idempotent — running it twice doesn't double-apply
-- **Verify:** test simulating an older `user_version`, confirm migration runs exactly once and lands at current version.
-
-#### Phase 1.6 — Storage Round-Trip Tests
-- **Depends on:** 1.5
-- **SSOT ref:** §6.2
-- **Build:** Comprehensive unit test suite covering CRUD on all three tables plus FK/enum constraint enforcement, consolidating and extending the per-table tests from 1.2–1.4.
-- **Done when:**
-  - [ ] All three tables have full CRUD test coverage
-  - [ ] `npm test` green
-- **Verify:** run `npm test -- storage`.
+  - [ ] Written answer to: what does the JSONL transcript actually contain, and how does it map to a real session's events
+  - [ ] Written answer to: how much of a decision's reasoning appears in the markdown artifacts versus the transcript
+  - [ ] Written answer to: what identifies which project a given brain-folder conversation belongs to
+- **Verify:** review the captured folder contents directly against the three questions above. Consolidate 15.1 and 15.2's findings into `docs/spike-capture-surfaces.md`, the reference every later capture phase cites.
 
 ---
 
-## Milestone 2 — Workspace & Security Baseline
+## Milestone 16 — Schema v2 Extension
 
-#### Phase 2.1 — Workspace Sandboxing
-- **Depends on:** 1.6
-- **SSOT ref:** §6.1
-- **Build:** resolve project root to an absolute path, create `.stenod/` directory, PID lock file preventing a second daemon from attaching to the same root.
+#### Phase 16.1 — `DECISION` Node Type + Resolution Fields
+- **Depends on:** 15.1, 15.2
+- **ARCHITECTURE ref:** §7.2
+- **Build:** extend `graph_nodes.type` to include `DECISION`, alongside the existing five values. Add `resolution` (ENUM, nullable: `SETTLED`/`REJECTED`/`OPEN`) and `resolution_reason` (TEXT, nullable). `resolution_reason` must be non-null whenever `resolution = REJECTED`, enforced at the application layer.
+- **Do NOT:** touch `status`'s existing enum in this phase — that's 16.2.
 - **Done when:**
-  - [ ] Second daemon attempt on the same root fails with a clear error
-  - [ ] Stale lock file (from a crashed process) is detected and cleaned up correctly
-- **Verify:** test spawning two attach attempts; test simulating a stale lock.
+  - [ ] `DECISION` nodes can be created with all three resolution states
+  - [ ] A `REJECTED` decision without a reason is rejected by the write path
+  - [ ] Existing node types and their behavior are completely unaffected
+- **Verify:** unit test creating one `DECISION` node per resolution state, plus a rejected-without-reason failure case.
 
-#### Phase 2.2 — Local Auth Token
-- **Depends on:** 2.1
-- **SSOT ref:** §6.1, §10
-- **Build:** token generation at init, stored at `.stenod/token`, rotation logic for `init --reset`.
+#### Phase 16.2 — Provenance Columns + `SHADOWED` Status + `RESOLVES` Edge
+- **Depends on:** 16.1
+- **ARCHITECTURE ref:** §7.2
+- **Build:** add `source_tool` (TEXT, non-null, defaulting per capture path) and `git_branch` (TEXT, nullable) to `graph_nodes`. Add `SHADOWED` to `status`'s enum, alongside `ACTIVE`/`REJECTED`/`SUPERSEDED`. Add `RESOLVES` to `graph_edges.edge_type`'s enum, alongside the existing four.
 - **Done when:**
-  - [ ] Token generated is cryptographically random, sufficient length
-  - [ ] Rotation invalidates the old token
-- **Verify:** test token uniqueness across multiple inits; test old token rejected post-rotation.
+  - [ ] All four new/extended fields insert and query correctly
+  - [ ] A `SHADOWED` node is excluded from any query already filtering to `status = 'ACTIVE'` — no query-site changes needed, confirming the filter was written generically
+- **Verify:** unit test inserting nodes across all `source_tool`/`status` combinations, confirm existing `ACTIVE`-only queries correctly exclude `SHADOWED`.
 
-#### Phase 2.3 — IPC Scaffold + Token Enforcement
-- **Depends on:** 2.2
-- **SSOT ref:** §6.1, §7
-- **Build:** Unix Domain Socket (Linux/Mac) / Named Pipe (Windows) scaffold. Every connection must present the valid token or be rejected.
-- **Do NOT:** Wire any real capture logic through this yet — connection + auth only.
+#### Phase 16.3 — Migration + Backfill + Round-Trip Tests
+- **Depends on:** 16.2
+- **ARCHITECTURE ref:** §7.2
+- **Build:** a `PRAGMA user_version` migration adding all of 16.1/16.2's columns to an existing 1.0 database. Old rows get `source_tool` backfilled from a best-guess mapping of their existing `type` (e.g. `FILE_STATE` → `fs`, `TERMINAL_*` → `terminal`); everything else defaults to null.
+- **Do NOT:** rewrite or delete any existing row's `id`, `content`, or other 1.0-era data — additive only.
 - **Done when:**
-  - [ ] Connection with correct token succeeds
-  - [ ] Connection with missing/wrong token is rejected
-- **Verify:** test both cases against a running socket.
+  - [ ] Migration runs cleanly against a real 1.0-era database fixture
+  - [ ] Backfilled `source_tool` values match the expected mapping for every 1.0 node type
+  - [ ] Migration is idempotent — running it twice doesn't double-apply or error
+- **Verify:** integration test against a seeded 1.0-shaped fixture DB, run the migration twice, confirm final state matches expected on both runs.
 
 ---
 
-## Milestone 3 — FSM & Lifecycle Core
+## Milestone 17 — Tool Integration Infrastructure
 
-#### Phase 3.1 — FSM State Enum + Transitions
-- **Depends on:** 1.6
-- **SSOT ref:** §6.3
-- **Build:** `IDE_IDLE → RUNTIME_ERR → DOC_EDIT → DIFF_SUBMIT`, with a direct `RUNTIME_ERR → DIFF_SUBMIT` skip tagged `PROVISIONAL_PANIC`. Pure state-transition logic, no I/O yet.
+#### Phase 17.1 — Hook-Script Router
+- **Depends on:** 16.3
+- **ARCHITECTURE ref:** §7.1
+- **Build:** the router logic every tool-specific hook script (Milestones 19–23) will call into. Given an event's working directory, resolve upward looking for a `.stenod/` directory. If found, hand the event to that project's daemon over the token-authenticated socket (or spool locally if unreachable) and exit `0` immediately. If not found, exit `0` immediately without capturing or sending anything.
+- **Do NOT:** implement any tool-specific payload parsing here — this phase is the routing/delivery mechanism only, shared by every tool.
 - **Done when:**
-  - [ ] All valid transitions implemented
-  - [ ] The panic-skip case is correctly detected and tagged
-- **Verify:** table-driven test covering every transition path including the panic case.
+  - [ ] A working-directory match correctly resolves to the right project's daemon
+  - [ ] No match exits cleanly with zero side effects
+  - [ ] The script never blocks: a simulated unreachable daemon still results in immediate exit, with the event spooled locally
+- **Verify:** unit tests for match/no-match cases, plus an integration test simulating a daemon-down scenario, confirming the spool file receives the event and the calling process is never blocked.
 
-#### Phase 3.2 — Recency Decay Function
-- **Depends on:** 3.1
-- **SSOT ref:** §6.3
-- **Build:** `decay(Δt) = 1 / (1 + ln(1 + Δt_seconds))` — the corrected formula, not the original `1/ln(1+Δt)`.
+#### Phase 17.2 — `stenod integrate` / `stenod detach` CLI Commands
+- **Depends on:** 17.1
+- **ARCHITECTURE ref:** §7.1, §6
+- **Build:** `stenod integrate <tool>` writes Stenod's hook entries into that tool's configuration file additively — never removing or modifying existing entries — and prints exactly what it wrote and where. `stenod detach <tool>` removes exactly those entries, then re-reads the file to confirm removal, mirroring `disable-network-capture`'s (Phase 12.5) confirmed-clean-undo pattern exactly.
+- **Do NOT:** run either command automatically from `init` or `start`. Do NOT touch any configuration entry Stenod didn't itself add.
 - **Done when:**
-  - [ ] `decay(0) === 1` exactly, no division-by-zero
-  - [ ] Function is monotonically decreasing for Δt > 0
-- **Verify:** unit test at Δt=0 explicitly, plus a monotonicity check across a range.
-
-#### Phase 3.3 — LWW Conflict Resolution
-- **Depends on:** 3.1
-- **SSOT ref:** §6.3
-- **Build:** a new `CONSTRAINT` node sharing a `constraint_key` with an existing `ACTIVE` constraint draws a `CONTRADICTS` edge to it and flips the old node's `status` to `SUPERSEDED`.
-- **Done when:**
-  - [ ] Second constraint with same key correctly supersedes the first
-  - [ ] `CONTRADICTS` edge is correctly recorded
-  - [ ] A third, unrelated constraint key is unaffected
-- **Verify:** test the exact three-node scenario above.
-
-#### Phase 3.4 — Time-Windowed Rejection
-- **Depends on:** 3.1
-- **SSOT ref:** §6.3
-- **Build:** logic accepting a duration (e.g. `15m`), marking all `ACTIVE` nodes created within that window as `REJECTED`.
-- **Do NOT:** implement any filesystem verification — this is a pure graph-metadata operation, per SSOT.
-- **Done when:**
-  - [ ] Nodes inside the window flip to `REJECTED`
-  - [ ] Nodes outside the window are untouched
-- **Verify:** test with nodes at controlled timestamps straddling the window boundary.
-
-#### Phase 3.5 — Anti-Rot Timeout
-- **Depends on:** 3.1
-- **SSOT ref:** §6.3
-- **Build:** if FSM remains in `RUNTIME_ERR` for τ > 600s, seal the active tree and apply decay.
-- **Done when:**
-  - [ ] Timeout correctly triggers at 600s, not before
-  - [ ] "Sealing" behavior is clearly defined and tested (define precisely what changes on the node/tree when sealed)
-- **Verify:** test with mocked/controlled time progression.
+  - [ ] `integrate` on a fixture config file adds only Stenod's own entries, confirmed by diff
+  - [ ] `detach` removes exactly those entries and confirms removal by re-reading the file
+  - [ ] Running `integrate` twice doesn't duplicate entries
+  - [ ] A config file with pre-existing, unrelated entries is completely unaffected beyond the addition/removal
+- **Verify:** fixture-file test for both commands, including the pre-existing-entries-untouched case.
 
 ---
 
-## Milestone 4 — Filesystem Capture Track
+## Milestone 18 — Interpretation Cascade
 
-#### Phase 4.1 — chokidar Watcher + Ignore-List
-- **Depends on:** 2.3, 3.1
-- **SSOT ref:** §6.1
-- **Build:** `chokidar` watcher over the project root. Excludes: `.env`, `.git/`, `node_modules/`, common build dirs (`dist/`, `build/`, `target/`, `.next/`), anything in the project's own `.gitignore`, binaries > 500KB.
+#### Phase 18.1 — `wink-nlp` Integration
+- **Depends on:** 16.3
+- **ARCHITECTURE ref:** §7.3
+- **Build:** add `wink-nlp` and its pinned language model package (per the Locked Technology Decisions table) as a dependency. Build a thin wrapper module exposing sentence splitting, tokenization, and negation detection — the primitives Layer 1 needs — rather than calling the library directly from interpretation logic.
 - **Done when:**
-  - [ ] All listed exclusions verified not to trigger events
-  - [ ] `.gitignore` parsing correctly extends the exclusion set
-  - [ ] A normal source file save does trigger an event
-- **Verify:** test against a fixture directory containing one of each excluded/included case.
+  - [ ] Sentence splitting and negation detection produce correct results on fixture sentences, including at least one negation-scope edge case
+  - [ ] The wrapper module has no dependents yet outside its own tests — this phase is the library integration, not the rule pass
+- **Verify:** unit tests against a fixture set of sentences, including plain, negated, and multi-clause cases.
 
-#### Phase 4.2 — web-tree-sitter Integration
-- **Depends on:** 4.1
-- **SSOT ref:** §6.2
-- **Build:** `web-tree-sitter` + `tree-sitter-javascript`/`tree-sitter-typescript` grammars. On file save, parse AST in a background thread. Explicit `tree.delete()`/`parser.delete()` in `finally` blocks.
+#### Phase 18.2 — Layer 1 Deterministic Rule Pass
+- **Depends on:** 18.1
+- **ARCHITECTURE ref:** §7.3
+- **Build:** using 18.1's primitives, detect explicit rejection language ("instead of", "let's not", "reverting"), decision language ("we'll use", "settled on"), and reuse the existing constraint comment syntax (Phase 4.3). A match produces a candidate `resolution` and `resolution_reason`; no match means this layer abstains — it must never guess.
+- **Do NOT:** call any AI/network service from this phase — purely deterministic.
 - **Done when:**
-  - [ ] Parse completes correctly on valid JS/TS fixtures
-  - [ ] No memory growth across repeated parse cycles (basic leak check)
-- **Verify:** parse correctness test + a loop-N-times memory check.
+  - [ ] Fixture sentences with clear rejection/decision language are correctly classified
+  - [ ] A genuinely ambiguous fixture sentence correctly abstains (produces no verdict) rather than guessing
+- **Verify:** unit test suite covering clear-positive, clear-negative, and ambiguous-abstain cases.
 
-#### Phase 4.3 — Constraint Comment Syntax Parser
-- **Depends on:** 4.2
-- **SSOT ref:** §6.2
-- **Build:** recognize `// VCS: constraint[key]=value` wherever tree-sitter identifies a comment node.
+#### Phase 18.3 — Topic-Identity Matching Ladder
+- **Depends on:** 18.2
+- **ARCHITECTURE ref:** §7.3
+- **Build:** the three-rung ladder from `ARCHITECTURE.md` §7.3: an explicit `constraint[key]` match wins outright; failing that, look for shared identifiers, a shared `source_file`, or explicit referential language ("instead of X"); failing that, leave both entries active and raise a `POSSIBLE_CONFLICT` marker rather than merging or duplicating silently.
 - **Done when:**
-  - [ ] Correctly extracts key/value from a valid constraint comment
-  - [ ] Ignores ordinary comments that don't match the pattern
-- **Verify:** fixture file with both constraint and non-constraint comments.
+  - [ ] An explicit key match correctly supersedes
+  - [ ] A deterministic-inference match (shared file, shared identifier) correctly supersedes
+  - [ ] A genuinely unclear pair produces a `POSSIBLE_CONFLICT` marker, and both nodes remain active
+- **Verify:** unit test for all three rungs of the ladder, including the flagged-not-guessed case.
 
-#### Phase 4.4 — `FILE_STATE` Node Creation
-- **Depends on:** 4.2, 3.1
-- **SSOT ref:** §6.2, §6.3
-- **Build:** wire filesystem events into `graph_nodes` writes (`FILE_STATE` type), including FSM state association (`DOC_EDIT` on save).
+#### Phase 18.4 — `DECISION` Node Creation Wired to Layer 0
+- **Depends on:** 16.3, 3.1, 3.3
+- **ARCHITECTURE ref:** §7.3
+- **Build:** wire the existing FSM and Last-Writer-Wins machinery (Phases 3.1, 3.3) against the new `DECISION` node type — a file overwrite superseding an earlier decision, or a failing-then-passing command sequence, should produce a correctly-resolved `DECISION` node without invoking Layer 1 or Layer 2 at all.
+- **Do NOT:** modify the FSM or LWW logic itself — this phase reuses it against a new node type, it doesn't change how either works.
 - **Done when:**
-  - [ ] A file save produces exactly one correctly-typed node with correct `fsm_state`
-- **Verify:** end-to-end test: save a fixture file, confirm the resulting DB row.
+  - [ ] A fixture structural sequence (file overwrite, or fail-then-pass command) produces a correctly-resolved `DECISION` node using only Layer 0
+  - [ ] No Layer 1/Layer 2 code is invoked for these cases
+- **Verify:** integration test asserting the resolution is correct and that Layer 1/2 code paths are never called for a purely structural fixture.
 
-#### Phase 4.5 — Secret Redaction (Filesystem)
-- **Depends on:** 4.4
-- **SSOT ref:** §6.1, §10
-- **Build:** regex pass for common secret shapes (cloud key patterns, bearer tokens, generic `key=`/`secret=` assignments) applied to file content before it reaches `graph_nodes.content`.
+#### Phase 18.5 — Layer 2 Optional AI Tie-Breaker Client
+- **Depends on:** 18.3
+- **ARCHITECTURE ref:** §7.3
+- **Build:** a client that, when a user-supplied API key is configured, sends only the ambiguous span plus minimal surrounding context (never the full transcript) to resolve a `POSSIBLE_CONFLICT` or an unresolved decision, only when explicitly invoked at handoff time. Without a key configured, this layer must be a complete no-op — the item simply stays `OPEN`.
+- **Do NOT:** call this layer automatically, on any schedule, or from anywhere other than an explicit handoff request. Do NOT send anything beyond the single ambiguous span and minimal context.
 - **Done when:**
-  - [ ] Known secret-shaped test strings are redacted, not stored raw
-  - [ ] Ordinary code content passes through unmodified
-- **Verify:** test with a fixture file containing both a fake secret and normal code.
+  - [ ] With no key configured, ambiguous items correctly remain `OPEN` and no network call is attempted
+  - [ ] With a key configured, a fixture ambiguous case is correctly resolved via a real call, sending only the expected minimal payload (verified via request inspection, not just a mocked response)
+  - [ ] This layer is never invoked outside of an explicit handoff call
+- **Verify:** unit test for the no-key no-op case; integration test with a real or recorded API call confirming payload size/content is the minimal span, not the full graph.
+
+#### Phase 18.6 — Interpretation Cascade Integration Test
+- **Depends on:** 18.4, 18.5
+- **ARCHITECTURE ref:** §7.3
+- **Build:** one comprehensive test exercising all three layers together against a realistic mixed fixture — some purely structural decisions, some clear-text decisions, some genuinely ambiguous ones — confirming the correct layer resolves each case and layers are tried in the correct cost order (0, then 1, then 2 only if configured).
+- **Done when:**
+  - [ ] The full cascade produces correct results across a mixed fixture, with each case resolved at the cheapest layer capable of resolving it
+  - [ ] Running the cascade twice on identical input produces identical output (determinism holds even with the optional Layer 2, given a fixed/recorded response)
+- **Verify:** run the integration test, inspect which layer resolved each fixture case, confirm it's the cheapest capable one.
 
 ---
 
-## Milestone 5 — Terminal Capture Track
+## Milestone 19 — Tier-A Capture: Claude Code
 
-#### Phase 5.1 — node-pty Shell Wrapper
-- **Depends on:** 2.3, 3.1
-- **SSOT ref:** §6.1
-- **Build:** `node-pty` wraps the developer's shell, Unix/Mac only per SSOT (Windows explicitly out of scope for now).
+#### Phase 19.1 — Claude Code Hook Receiver
+- **Depends on:** 17.2, 18.6, 15.1
+- **ARCHITECTURE ref:** §7.1
+- **Build:** using Phase 15.1's confirmed payload shapes, build the receiver that turns real `SessionStart`/`PostToolUse`/`Stop` hook payloads into graph nodes via the router (17.1) and the interpretation cascade (18.x), tagged `source_tool = 'claude-code'`.
+- **Do NOT:** invent payload fields not confirmed present in Phase 15.1's findings — if something assumed during design turns out absent, note it and adjust, don't fabricate.
 - **Done when:**
-  - [ ] A wrapped shell correctly relays stdin/stdout to the real terminal unmodified
-- **Verify:** manual/integration test running a simple command through the wrapper.
+  - [ ] Real hook payloads (from a live or recorded Claude Code session) produce correctly-typed, correctly-tagged nodes
+  - [ ] `git_branch` is correctly populated when present in the payload
+- **Verify:** integration test using either a live Claude Code session or a recorded fixture payload set from Phase 15.1.
 
-#### Phase 5.2 — Batching + Backpressure
-- **Depends on:** 5.1
-- **SSOT ref:** §6.1
-- **Build:** 16ms batching, 64KB high-water mark, overflow spills to temp file, stream pauses/resumes.
+#### Phase 19.2 — `PreCompact` Snapshot Handling
+- **Depends on:** 19.1
+- **ARCHITECTURE ref:** §7.1
+- **Build:** per Phase 15.1's confirmed findings on what `PreCompact` actually delivers, implement the snapshot behavior — capturing the clean pre-compaction state at that exact moment, delta-only against the last snapshot (not a full re-dump), per the locked design.
 - **Done when:**
-  - [ ] Output under 64KB batches correctly at ~16ms
-  - [ ] Output exceeding 64KB triggers the temp-file overflow path without data loss
-- **Verify:** test with a command producing a large burst of output, confirm nothing is dropped.
+  - [ ] A `PreCompact` event correctly triggers a snapshot containing only what's changed since the last one
+  - [ ] Behavior matches what Phase 15.1 actually confirmed `PreCompact` delivers — if it turns out to be signal-only rather than content-bearing, this phase implements the best-effort fallback documented in that spike, not the originally-assumed ideal case
+- **Verify:** integration test simulating a `PreCompact` event, confirming snapshot content matches expectations set by 15.1's findings.
 
-#### Phase 5.3 — Exit-Code Signal
-- **Depends on:** 5.2, 3.1
-- **SSOT ref:** §6.1, §6.3
-- **Build:** command exit code drives `TERMINAL_SUCCESS`/`TERMINAL_ERROR` node creation and the corresponding FSM transition.
+#### Phase 19.3 — Claude Code Integration End-to-End Test
+- **Depends on:** 19.2
+- **ARCHITECTURE ref:** §7.1
+- **Build:** one comprehensive test: `stenod integrate claude-code`, run a realistic session with a decision, a rejection, a compaction trigger, confirm the resulting graph state is correct start to finish.
 - **Done when:**
-  - [ ] Exit 0 produces `TERMINAL_SUCCESS`
-  - [ ] Non-zero exit produces `TERMINAL_ERROR` and triggers `RUNTIME_ERR`
-- **Verify:** test running a passing and a failing fixture command.
-
-#### Phase 5.4 — Long-Running Process Heuristic
-- **Depends on:** 5.3
-- **SSOT ref:** §6.1
-- **Build:** for processes that don't exit within the session, watch stderr for crash-shaped patterns (`Error:`, `Traceback`, `panic:`, unhandled rejection) as a secondary, explicitly-labeled heuristic signal.
-- **Done when:**
-  - [ ] A long-running fixture process emitting a crash-shaped stderr line produces a node tagged as heuristic-detected (distinguishable from the exit-code path)
-- **Verify:** test with a fixture that never exits but emits a stack-trace-shaped line.
-
-#### Phase 5.5 — Secret Redaction (Terminal)
-- **Depends on:** 5.3
-- **SSOT ref:** §6.1, §10
-- **Build:** apply the same redaction pass from Phase 4.5 to terminal content before storage.
-- **Done when:**
-  - [ ] Same redaction guarantees as 4.5, applied to terminal output
-- **Verify:** reuse the 4.5 test approach against terminal fixture output.
+  - [ ] This single test passes, proving the full Claude Code capture path works end to end
+- **Verify:** run the test, manually review the resulting graph nodes against what the simulated session should have produced.
 
 ---
 
-## Milestone 6 — Ingestion Queue ("The Bouncer")
+## Milestone 20 — Tier-A Capture: Codex
 
-#### Phase 6.1 — Serialized Queue
-- **Depends on:** 4.4, 5.3
-- **SSOT ref:** §6.1
-- **Build:** single serialized queue merging filesystem and terminal event streams into one write path to SQLite.
+#### Phase 20.1 — Codex Hook Receiver
+- **Depends on:** 17.2, 18.6
+- **ARCHITECTURE ref:** §7.1
+- **Build:** same shape as Phase 19.1, targeting Codex's hook set (`PreToolUse`, `PostToolUse`, `PreCompact`/`PostCompact`, `SessionStart`, `Stop`), tagged `source_tool = 'codex'`. Codex's hooks closely mirror Claude Code's, so this phase should largely reuse 19.1's structure rather than reinvent it — flag anything that doesn't map cleanly rather than forcing it.
 - **Done when:**
-  - [ ] Simultaneous fs + terminal events are written without interleaving corruption
-  - [ ] Write latency under 5ms per event under normal load
-- **Verify:** concurrent-event test measuring latency.
+  - [ ] Real or recorded Codex hook payloads produce correctly-typed, correctly-tagged nodes
+- **Verify:** integration test using a live or recorded Codex session.
 
-#### Phase 6.2 — Backpressure / Overflow Handling
-- **Depends on:** 6.1
-- **SSOT ref:** §6.1
-- **Build:** shared max in-flight depth; overflow spills to an append-only disk buffer, drained FIFO, never silently dropped.
+#### Phase 20.2 — Codex Integration End-to-End Test
+- **Depends on:** 20.1
+- **ARCHITECTURE ref:** §7.1
+- **Build:** same shape as Phase 19.3, for Codex.
 - **Done when:**
-  - [ ] Forced overflow condition results in zero dropped events, correct FIFO order on drain
-- **Verify:** test flooding the queue past its in-memory limit, confirm full recovery.
-
-#### Phase 6.3 — Burst-Load Integration Test
-- **Depends on:** 6.2
-- **SSOT ref:** §6.1
-- **Build:** full integration test simulating a realistic burst (e.g. a git rebase generating many file events plus terminal spam simultaneously).
-- **Done when:**
-  - [ ] Zero `SQLITE_BUSY` errors under the simulated burst
-  - [ ] All events accounted for in the DB afterward
-- **Verify:** run the burst test, inspect final row counts against expected.
+  - [ ] This single test passes, proving the full Codex capture path works end to end
+- **Verify:** run the test, manually review resulting graph nodes.
 
 ---
 
-## Milestone 7 — Daemon Lifecycle
+## Milestone 21 — Tier-A Capture: Kiro
 
-#### Phase 7.1 — `stenod init`
-- **Depends on:** 2.2
-- **SSOT ref:** §5, §6.1
-- **Build:** command that runs workspace sandboxing (2.1), token generation (2.2), and generates a systemd user unit (Linux) or launchd plist (Mac) with `Restart=on-failure`.
-- **Do NOT:** wire this into the full CLI yet (that's Milestone 10) — build and test the underlying function directly.
+#### Phase 21.1 — Kiro Hook Receiver
+- **Depends on:** 17.2, 18.6
+- **ARCHITECTURE ref:** §7.1
+- **Build:** same shape as Phase 19.1, targeting Kiro's hook set (`.kiro/hooks/` event triggers), tagged `source_tool = 'kiro'`.
 - **Done when:**
-  - [ ] Running init on a fresh directory produces `.stenod/`, token file, and a valid service unit file
-- **Verify:** inspect generated files; validate service unit syntax.
+  - [ ] Real or recorded Kiro hook payloads produce correctly-typed, correctly-tagged nodes
+- **Verify:** integration test using a live or recorded Kiro session.
 
-#### Phase 7.2 — `stenod start` / `stenod stop`
-- **Depends on:** 6.3, 7.1
-- **SSOT ref:** §5
-- **Build:** daemon process start/stop logic, wiring together the capture tracks (4.x, 5.x) and the ingestion queue (6.x) into one running process.
-- **Regression (found+fixed post-10.7):** `startDaemon()` originally wired
-  up terminal capture (5.x) unconditionally, alongside fs (4.x). This
-  spawned a real default shell (`process.env.SHELL || '/bin/sh'`) that
-  nothing could ever route real developer input to — no IPC bridge from a
-  backgrounded daemon's own PTY exists yet (see Phase 10.7's `e2e.test.ts`
-  Gap 3). Killing that idle shell on `stop()` produced a synthetic
-  `TERMINAL_SUCCESS` node (shell-prompt escape-code noise) that the
-  compiler's packing stages don't filter by type, so it was landing in
-  every real Unix/Mac handoff manifest (documented as Gap 4). Fixed at
-  root cause: `startDaemon()` no longer spawns terminal capture at all.
-  **The daemon is therefore fs-only for now** — the "Done when" line below
-  ("captures fs+terminal events") is deferred until a future phase builds
-  the real mechanism (Gap 3) to feed a backgrounded daemon's capture track
-  real terminal input; SSOT §5's "filesystem + terminal" framing for the
-  default tier is aspirational until then. The literal Verify line below
-  was always fs-only and is unaffected.
+#### Phase 21.2 — Kiro Spec-File Reader
+- **Depends on:** 21.1
+- **ARCHITECTURE ref:** §7.1
+- **Build:** a reader for Kiro's own `requirements.md`, `design.md`, and `tasks.md` files, extracting decisions and open items already structured by the tool itself, feeding them into the interpretation cascade the same as any other reasoning source.
 - **Done when:**
-  - [ ] `start` brings up a daemon that actually captures fs+terminal events (fs met; terminal deferred to Gap 3 — see Regression note above)
-  - [ ] `stop` cleanly shuts it down, no orphaned processes
-- **Verify:** integration test: start, trigger a file save, confirm a DB row, stop, confirm process exit.
+  - [ ] A fixture set of Kiro spec files produces correctly-typed decision/open nodes
+- **Verify:** unit test against fixture spec files.
 
-#### Phase 7.3 — `stenod status`
-- **Depends on:** 7.2
-- **SSOT ref:** §5
-- **Build:** reports daemon health, node count, last event timestamp.
+#### Phase 21.3 — Kiro Integration End-to-End Test
+- **Depends on:** 21.2
+- **ARCHITECTURE ref:** §7.1
+- **Build:** same shape as Phase 19.3, for Kiro, including both the hook path and the spec-file path.
 - **Done when:**
-  - [ ] Status output matches actual DB state
-- **Verify:** compare status output against a direct DB query.
-
-#### Phase 7.4 — Crash Recovery Validation
-- **Depends on:** 7.2
-- **SSOT ref:** §6.1
-- **Build:** no new code — this phase is validation only, confirming the systemd/launchd unit from 7.1 actually restarts the daemon on crash.
-- **Done when:**
-  - [ ] Force-killing the daemon process results in automatic restart within a reasonable window
-- **Verify:** manual test: `kill -9` the daemon, confirm it comes back.
-
-#### Phase 7.5 — Wire Terminal Capture + IPC Auth into the Daemon
-- **Depends on:** 7.2, 2.3, 5.3
-- **SSOT ref:** §6.1 ("Default tier: filesystem + terminal"), §5
-  ("stenod start | Start the ingestion daemon (default tier: filesystem
-  + terminal)")
-- **Context:** Phase 7.2's original regression note ("Gap 3") deferred
-  wiring real terminal input into a backgrounded daemon's own PTY,
-  since no IPC bridge existed yet from an interactive terminal to a
-  detached process. Phase 2.3 built and Verified a real IPC scaffold
-  with token enforcement specifically for this kind of bridge, but
-  nothing in startDaemon() has ever invoked createIpcServer(), and
-  nothing feeds real terminal input to a backgrounded daemon's capture
-  track through it. This phase closes both gaps together, since the
-  IPC layer is precisely the missing bridge Gap 3 was waiting on.
-- **Build:** wire startDaemon() to also start the Phase 2.3 IPC server
-  (token-enforced), and establish the real bridge from an interactive
-  terminal session to the backgrounded daemon's terminal-capture track
-  (createTerminalCapture(), Phase 5.1-5.5) via that IPC channel — e.g.
-  a thin client component that runs in the user's actual shell,
-  forwards command/exit-code events to the daemon over the token-
-  authenticated socket, and the daemon writes them via the existing,
-  already-Verified createTerminalCapture()/writeTerminalNode() path.
-- **Do NOT:** modify the terminal-capture logic itself (Phase 5.1-5.5)
-  or the IPC token/auth logic itself (Phase 2.2/2.3) — this phase wires
-  existing, tested pieces together, it does not rebuild them.
-- **Regression guard:** this touches src/daemon/lifecycle.ts (Phase
-  7.2, Verified) directly. Per the regression-guard rule, revert 7.2
-  to Built (unverified) once this phase's changes land, and re-verify
-  it (confirming fs capture still works exactly as before) alongside
-  this phase's own verification.
-- **Done when:**
-  - [ ] stenod start genuinely captures both filesystem AND terminal
-        events in the same running session — a real end-to-end test,
-        not two separate unit tests asserting each piece works in
-        isolation
-  - [ ] The IPC server is genuinely started by startDaemon() and
-        genuinely enforces the token (a connection without the correct
-        token is rejected, matching Phase 2.3's original test)
-  - [ ] stenod stop cleanly shuts down both the fs watcher and the
-        terminal bridge, no orphaned processes
-  - [ ] Existing Phase 7.2 fs-only behavior is unaffected — no
-        regression
-- **Verify:** integration test: start the daemon, run a real terminal
-  command with a real exit code through the bridge, confirm both a
-  FILE_STATE node (from a simultaneous file save) and a
-  TERMINAL_SUCCESS/TERMINAL_ERROR node land in graph_nodes in the same
-  session.
+  - [ ] This single test passes, proving the full Kiro capture path works end to end
+- **Verify:** run the test, manually review resulting graph nodes.
 
 ---
 
-## Milestone 8 — Compiler Engine
+## Milestone 22 — Tier-B Capture: Google Antigravity
 
-#### Phase 8.1 — Token Counting
-- **Depends on:** 1.6
-- **SSOT ref:** §6.4
-- **Build:** `gpt-tokenizer` integration measuring `token_cost` per node.
+#### Phase 22.1 — Auxiliary Watch-Path Registration
+- **Depends on:** 17.2, 15.2
+- **ARCHITECTURE ref:** §7.1
+- **Build:** `stenod integrate antigravity` registers `~/.gemini/antigravity/brain/` as an auxiliary watch path tied to the current project, distinct from the project-root-only watching every other capture path uses.
 - **Done when:**
-  - [ ] Token counts for known fixture strings match expected values
-- **Verify:** unit test against known-length fixtures.
+  - [ ] Registration correctly persists the auxiliary path association for the project
+  - [ ] `stenod detach antigravity` correctly removes it
+- **Verify:** unit test for register/detach.
 
-#### Phase 8.2 — Utility Score Calculation
-- **Depends on:** 3.2
-- **SSOT ref:** §6.4
-- **Build:** `v_i = λ1·decay(Δt) + λ2·causal_centrality + λ3·constraint_priority`, static constants `λ1=0.4, λ2=0.4, λ3=0.2`.
-- **Do NOT:** make λ values configurable or adaptive — static per SSOT.
+#### Phase 22.2 — Conversation-to-Project Matching
+- **Depends on:** 22.1
+- **ARCHITECTURE ref:** §7.1
+- **Build:** per Phase 15.2's confirmed findings on what identifies a conversation's project, implement matching logic — a conversation folder whose contents reference this project's workspace path is captured; anything that doesn't match confidently is left alone, never guessed at.
 - **Done when:**
-  - [ ] Score calculation matches hand-computed expected values on fixture nodes
-- **Verify:** unit test with hand-calculated expected scores.
+  - [ ] A fixture conversation folder referencing the current project is correctly matched
+  - [ ] A fixture folder referencing a different project is correctly skipped
+- **Verify:** unit test with both matching and non-matching fixture folders.
 
-#### Phase 8.3 — Causal Centrality
-- **Depends on:** 1.6
-- **SSOT ref:** §6.4
-- **Build:** simple in/out-degree count within a node's own edge set.
+#### Phase 22.3 — Brain-Folder Reader
+- **Depends on:** 22.2, 18.6
+- **ARCHITECTURE ref:** §7.1
+- **Build:** reads the JSONL transcript and markdown artifacts from a matched conversation folder, feeding content into the interpretation cascade, tagged `source_tool = 'antigravity'`.
 - **Done when:**
-  - [ ] Degree counts match expected values on a small fixture graph
-- **Verify:** unit test against a hand-built fixture graph.
+  - [ ] A fixture brain folder produces correctly-typed, correctly-tagged nodes from both the transcript and the markdown artifacts
+- **Verify:** integration test against a fixture brain folder (real or recorded from Phase 15.2).
 
-#### Phase 8.4 — Greedy-by-Ratio Packing
-- **Depends on:** 8.1, 8.2, 8.3
-- **SSOT ref:** §6.4
-- **Build:** traverse graph, drop non-`ACTIVE` nodes, force-include all `CONSTRAINT` nodes, sort remaining by `v_i / token_cost` descending, pack until token budget hit.
+#### Phase 22.4 — Antigravity Integration End-to-End Test
+- **Depends on:** 22.3
+- **ARCHITECTURE ref:** §7.1
+- **Build:** one comprehensive test: `stenod integrate antigravity`, run or simulate a session, confirm resulting graph state is correct — including the specific case of Antigravity's own history UI failing to show something that Stenod correctly captured anyway.
 - **Done when:**
-  - [ ] Constraint nodes always included regardless of score
-  - [ ] Non-active nodes never appear in output
-  - [ ] Packing respects the token budget exactly (never exceeds it)
-- **Verify:** unit test with a fixture graph including active/rejected/superseded/constraint nodes, confirm correct selection.
-
-#### Phase 8.5 — Local Improvement Pass
-- **Depends on:** 8.4
-- **SSOT ref:** §6.4
-- **Build:** for the lowest-value included node, check whether swapping for the highest-value excluded node that still fits improves total value; repeat until no improving swap exists.
-- **Done when:**
-  - [ ] A constructed fixture where greedy-alone is suboptimal is correctly improved by this pass
-  - [ ] Pass terminates (no infinite loop) on all test fixtures
-- **Verify:** unit test with a deliberately constructed suboptimal-greedy scenario.
-
-#### Phase 8.6 — U-Shaped Output Structuring
-- **Depends on:** 8.5
-- **SSOT ref:** §6.4
-- **Build:** structure final output as constraints (primacy) → packed causal graph (middle) → resume instruction (recency).
-- **Done when:**
-  - [ ] Output ordering matches the three-zone structure exactly on a fixture
-- **Verify:** unit test asserting zone ordering.
-
-#### Phase 8.7 — "Next Actions" Block
-- **Depends on:** 8.6, 3.1
-- **SSOT ref:** §6.4
-- **Build:** surface the FSM's current unresolved state (e.g. last unresolved `RUNTIME_ERR`) as an explicit block in the recency zone.
-- **Done when:**
-  - [ ] A fixture with an unresolved error correctly produces a Next Actions block referencing it
-  - [ ] A fixture with no unresolved state produces no such block (or a correctly empty one — decide and document which)
-- **Verify:** unit test for both cases.
-
-#### Phase 8.8 — Compiler Correctness/Determinism Tests
-- **Depends on:** 8.7
-- **SSOT ref:** §6.4
-- **Build:** comprehensive test suite proving the same graph state always produces the same manifest output, byte for byte.
-- **Done when:**
-  - [ ] Running the compiler twice on identical input produces identical output
-- **Verify:** run `npm test -- compiler` twice, diff outputs.
+  - [ ] This single test passes, proving the full Antigravity capture path works end to end
+- **Verify:** run the test, manually review resulting graph nodes.
 
 ---
 
-#### Phase 8.9 — DB-to-Manifest Orchestrator
-- **Depends on:** 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7
-- **SSOT ref:** §6.2, §6.4
-- **Build:** a single function (e.g. `compileManifest(db, tokenBudget)`)
-  that closes the gap left by Phases 8.1–8.8, none of which specify
-  wiring the pipeline to real database rows. It must: (1) query
-  `graph_nodes` for `status = 'ACTIVE'` rows with an **explicit
-  `ORDER BY`** (e.g. `id` or `created_at`) so fetch order is
-  deterministic regardless of SQLite's internal row storage or query
-  plan — this was flagged during Phase 8.8 verification as an
-  unguarded determinism risk; (2) compute each node's token cost
-  (8.1), causal centrality via `graph_edges` (8.3), and utility score
-  (8.2); (3) run greedy-by-ratio packing (8.4) and local improvement
-  (8.5); (4) assemble the U-shaped structure (8.6) and Next Actions
-  block (8.7).
-- **Do NOT:** perform clipboard delivery or `manifest_log` writes —
-  those remain Phase 9.1/9.2's responsibility.
+## Milestone 23 — Tier-C Capture: Cursor
+
+#### Phase 23.1 — Cursor Agent Hook Receiver
+- **Depends on:** 17.2, 18.6
+- **ARCHITECTURE ref:** §7.1
+- **Build:** same shape as Phase 19.1, targeting Cursor's agent-level hook system for tool calls and file edits (not its human-facing chat storage — that's 23.2/23.3), tagged `source_tool = 'cursor'`.
 - **Done when:**
-  - [ ] Running this function twice against an identical DB state
-        produces byte-identical manifest output — genuine end-to-end
-        determinism, closing the gap Phase 8.8's test intentionally
-        left uncovered (documented in that phase's own test file)
-  - [ ] The query includes an explicit `ORDER BY`
-  - [ ] `CONSTRAINT` nodes are force-included via real DB-fetched rows,
-        not mocked objects
-- **Verify:** integration test using a real (temp-file or in-memory)
-  SQLite DB, seeded with a realistic mix of node types/statuses/edges,
-  run twice, diff output byte-for-byte.
+  - [ ] Real or recorded Cursor agent hook payloads produce correctly-typed, correctly-tagged nodes
+- **Verify:** integration test using a live or recorded Cursor session.
+
+#### Phase 23.2 — Vet and Lock a Tier-C Parser
+- **Depends on:** 23.1
+- **ARCHITECTURE ref:** §8
+- **Build:** evaluate available open-source parsers for Cursor's undocumented chat-history storage against license (must be permissive), maintenance activity (is it keeping pace with Cursor's own format changes), and dependency footprint. Document the evaluation and the chosen package. Add it to the Locked Technology Decisions table only once this phase completes.
+- **Do NOT:** add any candidate to the Locked Technology Decisions table before this phase's evaluation is done and documented.
+- **Done when:**
+  - [ ] A written comparison of at least two candidates against the three criteria exists
+  - [ ] A package is chosen and its rationale documented
+  - [ ] The Locked Technology Decisions table is updated with the real package name and version
+- **Verify:** review the written evaluation and the updated table entry.
+
+#### Phase 23.3 — Tier-C Adapter Wrapper
+- **Depends on:** 23.2
+- **ARCHITECTURE ref:** §7.1
+- **Build:** a thin adapter module wrapping the chosen parser from 23.2 — the rest of the codebase talks to the adapter's own interface, never to the borrowed parser's types directly, per `AGENTS.md`'s module-boundary rule. Includes a guarded-read pattern: a schema mismatch degrades to a missing field, not a crash.
+- **Done when:**
+  - [ ] A fixture Cursor storage file produces correctly-typed nodes through the adapter
+  - [ ] A deliberately malformed/unexpected-shape fixture degrades gracefully (missing field, not an exception) rather than crashing
+- **Verify:** unit test for both the normal-parse and malformed-input cases.
+
+#### Phase 23.4 — Cursor Integration End-to-End Test
+- **Depends on:** 23.1, 23.3
+- **ARCHITECTURE ref:** §7.1
+- **Build:** one comprehensive test covering both the agent-hook path (23.1) and the Tier-C chat-storage path (23.3) together.
+- **Done when:**
+  - [ ] This single test passes, proving both Cursor capture paths work end to end
+- **Verify:** run the test, manually review resulting graph nodes.
 
 ---
 
-#### Phase 8.10 — Tiered Content Inclusion Fix
-- **Depends on:** 8.9
-- **SSOT ref:** §6.4 (Tiered content inclusion)
-- **Build:** extend `PackableNode` to carry a `contentPreview: string`
-  field, populated per the three-tier rule in SSOT §6.4. Update
-  `db-to-manifest.ts` to stop discarding `row.content` after computing
-  `tokenCost` — apply the tiering there. `token_cost` must reflect the
-  actual emitted content size (post-tiering), not the raw content size.
-- **Do NOT:** add new node types, call any LLM/summarization service,
-  or make the 0.6 threshold configurable — it's a fixed constant.
-- **Regression guard:** this touches `PackableNode`'s type (Phase 8.4),
-  `u-shaped-manifest.ts` (8.6), `db-to-manifest.ts` (8.9), and
-  potentially `clipboard.ts` (9.1) and `src/mcp/server.ts` (13.1) if
-  they assume the old shape. Per the regression-guard rule, revert
-  8.4, 8.5, 8.6, 8.9, and 9.1 to `Built (unverified)` once this phase's
-  changes land, and re-verify all of them in dependency order before
-  re-verifying this phase itself.
+## Milestone 24 — Cross-Tool Merge & Deduplication
+
+#### Phase 24.1 — `source_tool` Provenance Retrofit
+- **Depends on:** 19.3, 20.2, 21.3, 22.4, 23.4
+- **ARCHITECTURE ref:** §7.2
+- **Build:** confirm every capture path — including the original 1.0 filesystem (4.x) and terminal (5.x) tracks — correctly tags `source_tool` (`fs`, `terminal`, or the specific tool). 1.0's tracks likely need a small, additive change to populate this field, since it didn't exist when they were built.
+- **Do NOT:** modify any other behavior of the 4.x/5.x tracks — this is a tagging-only retrofit.
 - **Done when:**
-  - [ ] CONSTRAINT nodes carry full, uncapped content
-  - [ ] Nodes with utilityScore >= 0.6 carry a bounded excerpt (≤300
-        tokens)
-  - [ ] Nodes below that threshold carry a one-line deterministic
-        summary (template-based, not LLM-generated)
-  - [ ] token_cost reflects the actual emitted content per node, not
-        raw content size
-  - [ ] Existing Phase 8.4/8.5 packing tests still pass with updated
-        fixtures reflecting real content
-  - [ ] src/mcp/server.test.ts's failing assertion now passes for the
-        real reason (content is present), not by weakening the
-        assertion
-- **Verify:** re-run the full Milestone 8/9 test suites plus 13.1's
-  test, confirm token budgets are still respected, confirm a real
-  manifest sample reads like a briefing, not a raw dump.
+  - [ ] Every node created by any capture path, old or new, carries a correct `source_tool` value
+  - [ ] 1.0's existing tests still pass unmodified, confirming no behavioral regression
+- **Verify:** re-run the full 1.0 test suite plus new tagging-specific assertions.
+
+#### Phase 24.2 — Reasoning-to-File-Event Pinning
+- **Depends on:** 24.1
+- **ARCHITECTURE ref:** §7.4
+- **Build:** the filesystem-as-backbone merge logic — a reasoning node is matched to the file event it explains by which file it references first, falling back to timestamp only as a tiebreaker. Reasoning with no file reference yet becomes/stays `OPEN` until a file event arrives to anchor it.
+- **Done when:**
+  - [ ] A fixture reasoning node referencing a specific file correctly pins to that file's event
+  - [ ] A fixture reasoning node with no file reference correctly stays `OPEN`
+  - [ ] A later file event correctly resolves a previously-`OPEN` reasoning node that references it
+- **Verify:** unit tests for all three cases.
+
+#### Phase 24.3 — Double-Capture Shadowing
+- **Depends on:** 24.1
+- **ARCHITECTURE ref:** §7.2
+- **Build:** detect when a hook event and a terminal-track event describe the same occurrence (matching on command text and overlapping time window, within the same session) and mark the terminal-track copy `SHADOWED`. Where a confident match can't be made, both stay active.
+- **Done when:**
+  - [ ] A fixture pair of matching hook/terminal events correctly results in one `ACTIVE` node and one `SHADOWED` node
+  - [ ] A fixture pair that shouldn't match (different commands, no time overlap) correctly leaves both `ACTIVE`
+  - [ ] The compiler (Phase 8.4's packing query) correctly excludes `SHADOWED` nodes without any change to the packing logic itself
+- **Verify:** unit tests for match/no-match cases, plus confirmation that existing `ACTIVE`-only packing queries need no modification.
+
+#### Phase 24.4 — Same-File/Same-Second Collision Flagging
+- **Depends on:** 24.2
+- **ARCHITECTURE ref:** §7.4
+- **Build:** when two `DECISION` nodes from different tools reference the same file within the same second with contradictory `resolution`, apply LWW as normal but also raise a flagged, contested-entry marker for the user rather than silently resolving it as a clean supersession.
+- **Done when:**
+  - [ ] A fixture same-file, same-second, contradictory pair correctly applies LWW ordering *and* raises the contested-entry flag
+  - [ ] A fixture same-file collision with non-contradictory content does not raise the flag
+- **Verify:** unit tests for both cases.
+
+#### Phase 24.5 — Cross-Tool Merge Integration Test
+- **Depends on:** 24.3, 24.4
+- **ARCHITECTURE ref:** §7.4
+- **Build:** one comprehensive test simulating your actual target scenario — two or three tools acting on one project concurrently (a file write from one, a test run from another, overlapping in time) — confirming the merged graph is correctly ordered, deduplicated, and flagged where appropriate.
+- **Done when:**
+  - [ ] This single test passes, proving the cross-tool merge behaves correctly under realistic concurrent activity
+- **Verify:** run the test, manually review the resulting merged graph against what the simulated concurrent session should produce.
 
 ---
 
-## Milestone 9 — Delivery & Audit
+## Milestone 25 — Dependency-Change Capture
 
-#### Phase 9.1 — Clipboard Delivery
-- **Depends on:** 8.9
-- **SSOT ref:** §6.5
-- **Build:** `clipboardy` integration copying the compiled manifest.
+#### Phase 25.1 — Dependency-Manifest Watcher
+- **Depends on:** 16.3, 4.1
+- **ARCHITECTURE ref:** §7.1
+- **Build:** extend the existing chokidar watcher (Phase 4.1) to specifically watch `package.json`, `requirements.txt`, and `Cargo.toml`, and correlate changes with the exit codes of install commands from the terminal track (Phase 5.3) — never reading installed package contents (`node_modules/`, etc.) directly.
+- **Do NOT:** watch or read anything inside `node_modules/` or equivalent installed-package directories.
 - **Done when:**
-  - [ ] Compiled manifest correctly lands on the system clipboard
-- **Verify:** integration test reading clipboard content after a handoff call.
+  - [ ] A fixture manifest-file change is correctly detected and distinguished from an ordinary source-file save
+  - [ ] Correlation with a following install command's exit code works on a fixture sequence
+- **Verify:** integration test simulating a manifest edit followed by an install command.
 
-#### Phase 9.2 — `manifest_log` Write
-- **Depends on:** 9.1
-- **SSOT ref:** §6.5
-- **Build:** every compiled manifest writes a row (node IDs, token count, null outcome) before delivery.
+#### Phase 25.2 — Dependency `DECISION` Node Creation
+- **Depends on:** 25.1, 18.4
+- **ARCHITECTURE ref:** §7.1
+- **Build:** turn a detected dependency addition, removal, or swap into a `DECISION` node (settled for an addition, rejected-with-reason for a removed dependency where a prior addition exists to supersede).
 - **Done when:**
-  - [ ] Each handoff produces exactly one correct `manifest_log` row
-- **Verify:** test triggering a handoff, inspecting the resulting row.
-
-#### Phase 9.3 — Feedback Tagging
-- **Depends on:** 9.2
-- **SSOT ref:** §6.5, §4
-- **Build:** `--worked`/`--failed` updates the `outcome` column on the most recent `manifest_log` row.
-- **Done when:**
-  - [ ] Correct row updated, others untouched
-- **Verify:** test with multiple log rows, confirm only the most recent is affected.
+  - [ ] A fixture "add package X" produces a correctly-typed settled `DECISION`
+  - [ ] A fixture "remove package X, add package Y" produces X marked rejected (superseded by Y) and Y marked settled
+- **Verify:** unit test for both fixture cases.
 
 ---
 
-## Milestone 10 — CLI Assembly
+## Milestone 26 — Stale Rule-File Detection
 
-#### Phase 10.1 — CLI Framework Setup
-- **Depends on:** 0.1
-- **SSOT ref:** §5
-- **Build:** `commander` skeleton registering all command names from SSOT §5 as stubs (no logic wired yet).
+#### Phase 26.1 — Rule-File Reader + Scoreboard Comparison
+- **Depends on:** 18.4
+- **ARCHITECTURE ref:** §7.5
+- **Build:** a reader for a tool's own instruction files (`CLAUDE.md`, `.cursor/rules`, and similar), comparing claims found there against the current scoreboard's settled decisions, producing a mismatch record where they conflict. Read-only — this phase must never write to any file it reads.
+- **Do NOT:** write to any rule/instruction file under any circumstance, including for testing convenience — use fixture copies, never the real files.
 - **Done when:**
-  - [ ] `stenod --help` lists all commands with correct names
-- **Verify:** run `stenod --help`, compare against SSOT §5 command list exactly.
+  - [ ] A fixture rule file matching the current scoreboard produces no mismatch
+  - [ ] A fixture rule file contradicting a settled decision produces a correctly-described mismatch
+  - [ ] No write operation of any kind occurs against the rule file during either test
+- **Verify:** unit tests for both cases, plus an explicit assertion (e.g. a read-only file permission in the test fixture) that no write was attempted.
 
-#### Phase 10.2 — Wire `stenod init`
-- **Depends on:** 10.1, 7.1
-- **Build:** connect the CLI stub to the Phase 7.1 implementation.
+#### Phase 26.2 — Persistent, Event-Driven Flag Surfacing
+- **Depends on:** 26.1
+- **ARCHITECTURE ref:** §7.5
+- **Build:** surface a detected mismatch at the three specified moments — `handoff`, `status`, and the instant a new decision creates a fresh contradiction — and keep it visible until the underlying rule file actually changes. Never surface on a timer.
 - **Done when:**
-  - [ ] `stenod init` run from the CLI produces identical results to calling 7.1 directly
-- **Verify:** CLI invocation test.
-
-#### Phase 10.3 — Wire `stenod start`/`stop`/`status`
-- **Depends on:** 10.2, 7.3
-- **Done when:** [ ] each command correctly invokes its underlying implementation
-- **Verify:** CLI invocation tests for all three.
-
-#### Phase 10.4 — Wire `stenod handoff` (+worked/failed)
-- **Depends on:** 10.3, 9.3
-- **Done when:** [ ] `stenod handoff`, `stenod handoff --worked`, `stenod handoff --failed` all behave correctly end to end
-- **Verify:** CLI invocation tests for all three variants.
-
-#### Phase 10.5 — Wire `stenod reject --since`
-- **Depends on:** 10.4, 3.4
-- **Done when:** [ ] duration parsing + rejection logic correctly triggered from CLI
-- **Verify:** CLI invocation test with a controlled fixture graph.
-
-#### Phase 10.6 — Wire `stenod anchor`
-- **Depends on:** 10.4
-- **Done when:** [ ] `stenod anchor "<text>"` correctly creates a `CONSTRAINT` node
-- **Verify:** CLI invocation test, inspect resulting node.
-
-#### Phase 10.7 — Full End-to-End Integration Test
-- **Depends on:** 10.6
-- **SSOT ref:** whole document
-- **Build:** one comprehensive test: init a fixture project, start the daemon, simulate file saves + terminal errors + a rejection + an anchor, run handoff, assert the manifest contains exactly what it should given the simulated session.
-- **Done when:**
-  - [ ] This single test passes, proving the entire default-tier pipeline works together correctly
-- **Verify:** run the test, manually review the resulting manifest content against what the simulated session should produce.
+  - [ ] A mismatch appears in `handoff` and `status` output
+  - [ ] A mismatch appears immediately when a new contradicting decision is recorded
+  - [ ] A resolved mismatch (rule file updated) correctly stops appearing
+  - [ ] No polling/timer-based surfacing exists anywhere in this phase's code
+- **Verify:** integration test covering appearance at all three trigger points and disappearance on resolution.
 
 ---
 
-## Milestone 11 — Evaluation Harness
+## Milestone 27 — Two-View Handoff Compilation
 
-#### Phase 11.1 — Identifier Extraction Utility
-- **Depends on:** 10.7
-- **SSOT ref:** §12
-- **Build:** utility extracting function names, variable names, and error codes from `graph_nodes` content (reuse AST info from 4.2 where available).
+#### Phase 27.1 — `--full` / `--new` Handoff Flags
+- **Depends on:** 24.5
+- **ARCHITECTURE ref:** §7.5
+- **Build:** `--full` compiles the complete standing scoreboard (every settled decision, every rejected one with its reason); `--new` compiles only what's changed since the timestamp of the previous `manifest_log` entry. Both run the same conflict resolution — a superseded decision never appears as live in either view.
 - **Done when:**
-  - [ ] Correct identifier extraction on fixture source content
-- **Verify:** unit test against known fixture identifiers.
+  - [ ] `--full` on a fixture graph produces the complete current scoreboard
+  - [ ] `--new` on the same fixture, with a prior `manifest_log` entry, produces only the delta since that entry
+  - [ ] Neither flag ever includes a `SUPERSEDED` node as if it were `ACTIVE`
+- **Verify:** unit tests for both flags against a fixture graph with a mix of settled/rejected/superseded/new content.
 
-#### Phase 11.2 — Exact-Identifier Recall Calculator
-- **Depends on:** 11.1
-- **SSOT ref:** §12
-- **Build:** compares identifiers present in source graph nodes against identifiers present in a compiled manifest, computes recall fraction.
+#### Phase 27.2 — Rejection One-Liner Tiering
+- **Depends on:** 27.1, 8.10
+- **ARCHITECTURE ref:** §7.5
+- **Build:** extend Phase 8.10's existing tiered content inclusion so every rejected `DECISION` node — regardless of its utility score — always appears in `--full` output, but as a one-line "what was rejected, and why" summary rather than a full excerpt, so a large rejection history doesn't bloat the manifest.
+- **Do NOT:** exclude any rejected decision from `--full` output — all of them appear, per the locked design; only their *content tier* changes.
 - **Done when:**
-  - [ ] Correct recall percentage on a hand-computed fixture case
-- **Verify:** unit test with known expected recall value.
+  - [ ] Every rejected `DECISION` node in a fixture graph appears in `--full` output
+  - [ ] Each appears as a one-line summary, not full content, regardless of its utility score
+  - [ ] A fixture graph with a large number of rejected nodes produces a manifest that stays within a reasonable token range, not scaling linearly with full-content inclusion
+- **Verify:** unit test confirming full coverage plus tiering; a token-count assertion on a fixture with many rejections.
 
-#### Phase 11.3 — Dev-Only Evaluation Harness Script
-- **Depends on:** 11.2
-- **SSOT ref:** §12
-- **Build:** an internal npm script (not a public CLI command — not in SSOT §5's interface list) that runs the recall calculator against a real project's graph for development-time use.
-- **Do NOT:** expose this as a `stenod` CLI command — SSOT does not list one.
+#### Phase 27.3 — Default-to-`--full` + `--new` Hint Line
+- **Depends on:** 27.2
+- **ARCHITECTURE ref:** §7.5
+- **Build:** the bare `stenod handoff` (no flag) behaves as `--full`, with a line appended below the output pointing to `--new` for the leaner option.
 - **Done when:**
-  - [ ] Script runs against a real populated `.stenod/graph.db` and outputs a recall number
-- **Verify:** run the script manually against test data.
+  - [ ] `stenod handoff` with no flag produces identical output to `stenod handoff --full`
+  - [ ] The hint line appears and correctly references `--new`
+- **Verify:** CLI invocation test comparing flagless output to explicit `--full` output.
 
 ---
 
-## Milestone 12 — Opt-in Network Capture Tier
+## Milestone 28 — Evaluation Harness Update
 
-#### Phase 12.1 — Local CA Generation + Trust Store Install
-- **Depends on:** 10.7
-- **SSOT ref:** §6.1
-- **Build:** `node-forge` (or `mockttp`'s built-in CA generation) to create a local root CA; install into the OS trust store, only when explicitly triggered.
-- **Do NOT:** trigger this automatically from `init` or `start` — opt-in only, per SSOT.
+#### Phase 28.1 — Extend Recall Calculator to Multi-Tool Capture
+- **Depends on:** 24.5, 11.2
+- **ARCHITECTURE ref:** §14
+- **Build:** extend Phase 11.2's exact-identifier recall calculator to run against nodes tagged with any `source_tool`, not only `fs`/`terminal` — confirming the metric still means what it's supposed to mean once hook- and artifact-sourced content is in the mix.
 - **Done when:**
-  - [ ] CA generation produces a valid certificate
-  - [ ] Trust store installation confirmed via OS-level check
-- **Verify:** test cert validity; manual OS trust store inspection.
-
-#### Phase 12.2 — Local HTTPS Proxy + Provider Allowlist
-- **Depends on:** 12.1
-- **SSOT ref:** §6.1
-- **Build:** `mockttp`-based local proxy, allowlisting only known AI provider domains (`api.anthropic.com`, `api.openai.com`, `generativelanguage.googleapis.com`); all other traffic passes through untouched and unlogged.
-- **Done when:**
-  - [ ] Requests to allowlisted domains are visible to the daemon
-  - [ ] Requests to any other domain are confirmed NOT logged/captured
-- **Verify:** test with both an allowlisted and a non-allowlisted mock request.
-
-#### Phase 12.3 — SSE `.tee()` + `PROVIDER_CAPTURE` Node Creation
-- **Depends on:** 12.2
-- **SSOT ref:** §6.1, §6.2
-- **Build:** intercepted SSE streams are `.tee()`'d — one stream passes through unmodified to the caller, the other feeds `PROVIDER_CAPTURE` node creation.
-- **Do NOT:** let this drive FSM transitions — per SSOT §6.3, `PROVIDER_CAPTURE` nodes are content-only.
-- **Done when:**
-  - [ ] Caller-facing stream is byte-identical to the unintercepted case
-  - [ ] Daemon-facing stream correctly produces `PROVIDER_CAPTURE` nodes
-  - [ ] No FSM state change results from this
-- **Verify:** test comparing intercepted vs. non-intercepted stream output; confirm FSM state unchanged.
-
-#### Phase 12.4 — Wire `stenod enable-network-capture`
-- **Depends on:** 12.3
-- **Done when:** [ ] command correctly triggers 12.1–12.3 in sequence, with clear explanation shown to the user before acting
-- **Verify:** CLI invocation test.
-
-#### Phase 12.5 — Wire `stenod disable-network-capture` + Uninstall Test
-- **Depends on:** 12.4
-- **SSOT ref:** §6.1, §10
-- **Build:** fully reverts CA trust store installation and proxy settings.
-- **Done when:**
-  - [ ] After disable, the CA is confirmed removed from the trust store
-  - [ ] Proxy settings confirmed reverted
-  - [ ] A fresh enable → disable → enable cycle works cleanly (no leftover state)
-- **Verify:** full enable/disable/enable integration test with OS-level trust store checks.
+  - [ ] Recall calculation on a mixed-source fixture graph produces correct results across all `source_tool` values
+- **Verify:** unit test with a fixture graph mixing 1.0-era and 2.0-era node sources.
 
 ---
 
-## Milestone 13 — Optional MCP Interface
+## Milestone 29 — 2.0 Documentation Reconciliation
 
-#### Phase 13.1 — MCP Resource Exposure
-- **Depends on:** 10.7
-- **SSOT ref:** §5, §6.5
-- **Build:** expose `stenod handoff` as an MCP resource/tool. Must degrade gracefully to clipboard-only if MCP transport is unavailable.
-- **Do NOT:** make this a replacement for clipboard delivery — it's additive convenience only, per SSOT.
+#### Phase 29.1 — Antigravity Cross-Verification of the 2.0 Reference Docs
+- **Depends on:** 27.3
+- **ARCHITECTURE ref:** whole document
+- **Build:** no new code. Antigravity reads `ARCHITECTURE.md`, `SECURITY.md`, `README.md`, `AGENTS.md`, `CLAUDE.md`, and `ANTIGRAVITY.md` together in one pass and checks them against each other and against the actual shipped 2.0 codebase at this point — flagging any claim that's gone stale (a described-but-not-yet-built feature that's now built and behaves differently, a command that changed shape, a limitation that's been resolved).
 - **Done when:**
-  - [ ] MCP-connected client can retrieve the manifest directly
-  - [ ] Clipboard delivery still works identically when MCP isn't in use
-- **Verify:** test both paths independently.
-
----
-
-## Milestone 14 — Documentation & Release Prep
-
-#### Phase 14.1 — `SECURITY.md`
-- **Depends on:** 12.5
-- **SSOT ref:** §10
-- **Build:** plain-language doc stating exactly what's captured, where it's stored (always local), and precisely what the opt-in tier does and doesn't do.
-- **Done when:**
-  - [ ] Doc accurately reflects the actual implemented behavior, not aspirational behavior
-- **Verify:** manual review against the actual built system.
-
-#### Phase 14.2 — Final README Pass
-- **Depends on:** 14.1
-- **Build:** install instructions, usage examples, link to SECURITY.md and SSOT.
-- **Done when:**
-  - [ ] A fresh reader could install and run `stenod init && stenod start` successfully from the README alone
-- **Verify:** manual walkthrough following only the README.
-
-#### Phase 14.3 — npm Publish Dry-Run
-- **Depends on:** 14.2
-- **Build:** `npm publish --dry-run`, final `package.json` review (name `stenod`, correct `bin` entry, correct `files`/`main` fields).
-- **Done when:**
-  - [ ] Dry-run completes with no errors, package contents look correct
-- **Verify:** inspect dry-run output directly.
+  - [ ] Each of the six documents is confirmed consistent with the others
+  - [ ] Each is confirmed accurate against the real, shipped 2.0 code — not aspirational
+  - [ ] Any drift found is listed explicitly, with the specific file and claim, not summarized away
+- **Verify:** review the cross-check report directly; resolve any flagged drift before considering 2.0's documentation complete.
