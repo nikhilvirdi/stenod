@@ -338,6 +338,8 @@ Fully free. Node.js, SQLite, `chokidar`, `node-pty`, `web-tree-sitter`, `gpt-tok
 
 A record of the material corrections made during design, kept so a future contributor understands *why* things are the way they are, not just what they are.
 
+**Found during design, before any code was written:**
+
 | Issue | Resolution |
 |---|---|
 | Early spec claimed both a greedy compiler and an FPTAS DP as current | Greedy-by-ratio plus a local-improvement pass is the actual algorithm; the FPTAS is out of scope, not silently half-implemented |
@@ -349,6 +351,19 @@ A record of the material corrections made during design, kept so a future contri
 | Capture mechanism couldn't see IDE-native AI chat panels, only browser tabs | Generalized to a local HTTPS interception proxy covering any tool making outbound HTTPS calls |
 | HTTPS interception originally implied as default-on | Made strictly opt-in |
 | Package name collided with npm's similarity checks | Published as `steno-daemon`; the CLI command remains `stenod` |
+
+**Found during 1.0's actual implementation — real bugs a design review can't catch, only building can:**
+
+| Issue | Resolution |
+|---|---|
+| Phase 8.8's determinism test only ever covered the in-memory packing pipeline (8.4–8.7) — correct per each phase's own scope, but no phase had specified building the piece that connects the database to that pipeline, so genuine end-to-end determinism, including SQLite's own fetch ordering, went untested | Added Phase 8.9 (DB-to-manifest orchestrator) with an explicit `ORDER BY` requirement, closing the gap directly |
+| `stenod start` / `stenod stop` were originally designed as if they'd run in-memory, in-process — they don't, since each CLI invocation is its own process and the daemon has to persist after the command that started it exits | Fixed with a real detached spawn (`child_process.spawn({ detached: true })`) for `start` and OS-signal shutdown (`SIGTERM`, routed through the PID lock file) for `stop` |
+| The packed manifest's own node type never carried a node's actual content — only its id, type, status, and score — so every phase built on top of it (packing, delivery, MCP exposure) faithfully shipped manifests with no real resumable text in them, quietly defeating the project's entire stated purpose | Fixed via tiered content inclusion: full content for `CONSTRAINT` nodes, a bounded excerpt for anything scoring `>= 0.6`, a deterministic one-line summary otherwise — see §7.5 |
+
+**2.0's design phase, this expansion:**
+
+| Issue | Resolution |
+|---|---|
 | Full browser-chat capture module (extension, network-JSON capture, manual trigger) | Designed end to end, then shelved rather than deleted — no capture path a developer could fully trust, scope moved to terminal agents and agentic IDEs instead |
 | Building a custom or small AI model to replace the tie-breaker | Rejected — understanding fuzzy, context-dependent language is what an LLM is for; no cheaper floor exists, and no labeled data exists to train one anyway |
 | Hosting a shared AI account for the tie-breaker | Rejected — creates a bill that scales with every user, at odds with a free-tier-friendly, personal tool. User's own key instead |
