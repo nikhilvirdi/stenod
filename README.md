@@ -1,11 +1,9 @@
 # Stenod
-
+ 
 <p align="center">
   <img width="480" alt="Stenod — a black box recorder for your AI coding sessions" src="https://github.com/user-attachments/assets/de2bdd63-0cb7-447a-a2cb-f1ac3525748d" />
 </p>
-
 <p align="center">
-
 [![CI](https://github.com/nikhilvirdi/stenod/actions/workflows/ci.yml/badge.svg)](https://github.com/nikhilvirdi/stenod/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/steno-daemon.svg)](https://www.npmjs.com/package/steno-daemon)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
@@ -23,47 +21,46 @@
 [![Vitest](https://img.shields.io/badge/tested%20with-Vitest-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
 [![ESLint](https://img.shields.io/badge/lint-ESLint-4B32C3?logo=eslint&logoColor=white)](https://eslint.org/)
 [![Prettier](https://img.shields.io/badge/code%20style-Prettier-F7B93E?logo=prettier&logoColor=black)](https://prettier.io/)
-
+ 
 </p>
-
 A black box recorder for your AI coding sessions.
-
+ 
 AI-assisted coding sessions collapse at boundaries: rate limits, provider outages, context-window exhaustion, a developer switching tools mid-task. What's lost at that moment isn't just chat history. It's the *reasoning* — which decisions were made and why, which approaches were tried and rejected, and what you were in the middle of doing.
-
+ 
 Stenod is a local, deterministic daemon that quietly watches your files and terminal, not your chat, and compiles everything that matters into a Handoff Manifest the moment you need to resume, in any AI tool, cold. It's out-of-band by design: it never depends on the AI being alive or reachable, because it was never inside that AI to begin with.
-
+ 
 For the full architecture, design rationale, and comparison against existing AI-memory tools, see [ARCHITECTURE.md](./ARCHITECTURE.md). For exactly what's captured, where it's stored, and the opt-in network tier's guarantees, see [SECURITY.md](./SECURITY.md).
-
+ 
 ---
-
+ 
 ## Install
-
+ 
 ```
 npm install -g steno-daemon
 ```
-
+ 
 The package on npm is named `steno-daemon` (a naming-availability adjustment); the command you run is `stenod`.
-
+ 
 ## Quick Start
-
+ 
 ```
 stenod init
 stenod start
 ```
-
+ 
 > [!IMPORTANT]
 > `stenod start` alone only captures **filesystem** events — it never spawns a shell itself, since the daemon runs fully detached. To also capture a **terminal** session, run `stenod attach` in each interactive shell you want captured, once per session.
-
+ 
 Work normally: save files, run commands. When you need to hand off:
-
+ 
 ```
 stenod handoff
 ```
-
+ 
 The compiled Handoff Manifest is copied to your clipboard. Paste it into any AI tool to resume where you left off.
-
+ 
 ## Command Reference
-
+ 
 | Command | Description |
 |---|---|
 | `stenod init [--reset]` | Set up the daemon + database for the current project. `--reset` rotates the local auth token. |
@@ -77,25 +74,25 @@ The compiled Handoff Manifest is copied to your clipboard. Paste it into any AI 
 | `stenod enable-network-capture` | Opt in to capturing AI-provider network traffic (installs a local CA, starts a local proxy). Unix/Mac only. |
 | `stenod disable-network-capture` | Fully revert the network-capture tier: removes the CA from the OS trust store, reverts proxy settings. |
 | `stenod mcp` | Run as an MCP server over stdio, exposing the handoff manifest as a resource for MCP-connected clients. |
-
+ 
 ## How It Works
-
+ 
 `chokidar` watches your project's files, and `stenod attach` bridges in real terminal activity. Both feed a causal graph stored in local SQLite, using typed edges (`CAUSED_BY`, `CONTRADICTS`, `DEPENDS_ON`) instead of a vector store, so the system tracks which decisions are still true rather than which ones sound similar. A deterministic compiler packs the highest-value nodes into a token budget with greedy-by-ratio knapsack packing, structures the output U-shaped (constraints first, causal history in the middle, next steps last) to work with how transformers attend to context, and delivers it via clipboard or, optionally, as an MCP resource.
-
+ 
 Full detail: [ARCHITECTURE.md](./ARCHITECTURE.md).
-
+ 
 ## Security & Privacy
-
+ 
 Zero telemetry, always. Local-only storage. The network-capture tier is opt-in, allowlists exactly three known AI-provider domains, and ships with a full, confirmed-clean uninstall path.
-
+ 
 Full detail: [SECURITY.md](./SECURITY.md).
-
+ 
 ## Platform Support
-
+ 
 Filesystem capture and the core CLI work on Windows, Linux, and Mac. Terminal capture (`stenod attach`) and the network-capture tier depend on Unix/Mac-only mechanisms (`node-pty`, OS trust-store APIs) and aren't available on Windows.
-
+ 
 ## License & Contributing
-
+ 
 MIT © Nikhil Virdi — see [LICENSE](./LICENSE) for details.
-
+ 
 This project isn't yet accepting external contributions; no `CONTRIBUTING.md` exists yet. That's a deliberate early-stage choice, not an oversight. Contribution infrastructure may be added later.
