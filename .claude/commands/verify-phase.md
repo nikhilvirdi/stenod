@@ -7,11 +7,18 @@ allowed-tools: Read, Grep, Glob, Bash(npm test*), Bash(npm run lint*), Bash(npx 
 Verify phase $ARGUMENTS, currently `Built (unverified)` in WORKPLAN.md's
 Master Status Tracker.
 
+Per AGENTS.md, Antigravity is this project's primary verifier when
+Claude Code was the implementer — prefer routing there first. This
+command exists as the sanctioned fallback for a genuinely fresh,
+same-tool session when that's not available; it only counts as real
+verification if this session has no memory of implementing the phase
+itself.
+
 Do not assume anything from prior conversation — treat this as a cold
 review, since the point of this pass is fresh eyes.
 
 1. Read that phase's full entry in WORKPLAN.md (Build / Do NOT / Done
-   when / Verify) and the STENOD_SSOT.md section(s) it references.
+   when / Verify) and the ARCHITECTURE.md section(s) it references.
 2. Inspect the actual code and tests for this phase directly (`git
    log`, `git diff`, or reading the relevant files) — don't take a
    summary's word for it.
@@ -19,9 +26,9 @@ review, since the point of this pass is fresh eyes.
    that they exist.
 4. Report PASS or FAIL for every individual "Done when" checklist item
    — not one overall verdict.
-5. Flag anything that looks like drift from the SSOT even if it isn't
-   explicitly on the checklist, especially any file touched outside
-   this phase's stated scope.
+5. Flag anything that looks like drift from ARCHITECTURE.md even if it
+   isn't explicitly on the checklist, especially any file touched
+   outside this phase's stated scope.
 
 Only if every item is a clean PASS: update this phase's row in
 WORKPLAN.md's Master Status Tracker to `Verified`, and remind me to
