@@ -1,5 +1,5 @@
 {
-  "name": "stenod",
+  "name": "steno-daemon",
   "version": "0.1.0",
   "description": "Local, deterministic, out-of-band session capture daemon for AI-assisted coding.",
   "type": "module",
