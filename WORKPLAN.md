@@ -188,7 +188,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 
 | # | Phase | Depends on | Status |
 |---|---|---|---|
-| 15.1 | Claude Code hook payload spike | 14.3 | Not Started |
+| 15.1 | Claude Code hook payload spike | 14.3 | Verified |
 | 15.2 | Antigravity brain-folder spike | 14.3 | Not Started |
 | 16.1 | `DECISION` node type + `resolution`/`resolution_reason` columns | 15.1, 15.2 | Not Started |
 | 16.2 | `source_tool`/`git_branch` columns + `SHADOWED` status + `RESOLVES` edge type | 16.1 | Not Started |
@@ -244,11 +244,23 @@ Per `AGENTS.md`'s Verification section: this milestone is validation only, and e
 - **Build:** on a throwaway project, wire the minimal set of Claude Code hooks (`SessionStart`, `PostToolUse`, `PreCompact`, `Stop`) to append their full, raw JSON payload to a local file — no parsing, no daemon integration, just capture the ground truth. Run a realistic ~20-minute session: make a decision, reject an approach mid-way, run a failing then a passing command, and try to trigger a compaction.
 - **Do NOT:** wire this into the actual daemon or write any production capture code — this phase produces a reference document, not shipped code.
 - **Done when:**
-  - [ ] Real payloads captured for all four hook events
-  - [ ] Written answer to: how much of the assistant's own reasoning text rides along in each event, if any
-  - [ ] Written answer to: does `PreCompact` deliver actual pre-compaction content, or only a signal that compaction is about to happen
-  - [ ] Written answer to: what session/timestamp/branch metadata is actually present in each payload
+  - [x] Real payloads captured for all four hook events
+  - [x] Written answer to: how much of the assistant's own reasoning text rides along in each event, if any
+  - [x] Written answer to: does `PreCompact` deliver actual pre-compaction content, or only a signal that compaction is about to happen
+  - [x] Written answer to: what session/timestamp/branch metadata is actually present in each payload
 - **Verify:** review the captured payload samples directly against the four questions above.
+
+**Findings:**
+- SessionStart: thin — session_id, transcript_path, cwd, source ("startup" | "compact"), model. No reasoning content.
+- PostToolUse: full tool_input + tool_response, including raw Bash stdout/stderr. Real signal.
+- Stop: includes last_assistant_message (full text of Claude's final reply). No user-side prompt text.
+- PreCompact: signal-only — trigger ("manual"|"auto") + custom_instructions. No transcript/context payload.
+- No git_branch field in any event — confirms §7.2 fallback (read .git/HEAD directly) is required, not optional.
+- GAP: no hook payload contains the user's own prompt text, in any event. Only Claude's output
+  (Stop) and tool activity (PostToolUse) are captured. User intent is only recoverable by
+  separately parsing transcript_path (JSONL). Any design assuming hooks alone capture
+  full conversational context is wrong — flag against ARCHITECTURE.md before build phases
+  that depend on this.
 
 #### Phase 15.2 — Antigravity Brain-Folder Spike
 - **Depends on:** 14.3
