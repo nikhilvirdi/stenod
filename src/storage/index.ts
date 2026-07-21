@@ -2,8 +2,14 @@ import type Database from 'better-sqlite3';
 
 // Storage module boundary
 export { openDatabase } from './connection.js';
-export { createGraphNodesTable, NODE_TYPES, NODE_STATUSES } from './schema/graph-nodes.js';
-export type { NodeType, NodeStatus } from './schema/graph-nodes.js';
+export {
+  createGraphNodesTable,
+  NODE_TYPES,
+  NODE_STATUSES,
+  NODE_RESOLUTIONS,
+  insertDecisionNode,
+} from './schema/graph-nodes.js';
+export type { NodeType, NodeStatus, NodeResolution, DecisionNodeInput } from './schema/graph-nodes.js';
 export { createGraphEdgesTable, EDGE_TYPES } from './schema/graph-edges.js';
 export type { EdgeType } from './schema/graph-edges.js';
 export { createManifestLogTable, MANIFEST_OUTCOMES } from './schema/manifest-log.js';

@@ -190,7 +190,7 @@ Update this table as work progresses. Status values: `Not Started`, `In Progress
 |---|---|---|---|
 | 15.1 | Claude Code hook payload spike | 14.3 | Verified |
 | 15.2 | Antigravity brain-folder spike | 14.3 | Verified |
-| 16.1 | `DECISION` node type + `resolution`/`resolution_reason` columns | 15.1, 15.2 | Not Started |
+| 16.1 | `DECISION` node type + `resolution`/`resolution_reason` columns | 15.1, 15.2 | Built (unverified) |
 | 16.2 | `source_tool`/`git_branch` columns + `SHADOWED` status + `RESOLVES` edge type | 16.1 | Not Started |
 | 16.3 | Migration + backfill + round-trip tests | 16.2 | Not Started |
 | 17.1 | Hook-script router (per-project resolution) | 16.3 | Not Started |
@@ -302,9 +302,9 @@ Findings:
 - **Build:** extend `graph_nodes.type` to include `DECISION`, alongside the existing five values. Add `resolution` (ENUM, nullable: `SETTLED`/`REJECTED`/`OPEN`) and `resolution_reason` (TEXT, nullable). `resolution_reason` must be non-null whenever `resolution = REJECTED`, enforced at the application layer.
 - **Do NOT:** touch `status`'s existing enum in this phase — that's 16.2.
 - **Done when:**
-  - [ ] `DECISION` nodes can be created with all three resolution states
-  - [ ] A `REJECTED` decision without a reason is rejected by the write path
-  - [ ] Existing node types and their behavior are completely unaffected
+  - [x] `DECISION` nodes can be created with all three resolution states
+  - [x] A `REJECTED` decision without a reason is rejected by the write path
+  - [x] Existing node types and their behavior are completely unaffected
 - **Verify:** unit test creating one `DECISION` node per resolution state, plus a rejected-without-reason failure case.
 
 #### Phase 16.2 — Provenance Columns + `SHADOWED` Status + `RESOLVES` Edge
