@@ -1,31 +1,26 @@
-# dependencies
-node_modules/
-
-# build output
+# Build and packaging output
 dist/
-build/
-target/
-.next/
+packed-check/
+*.tgz
 
-# coverage
-coverage/
-
-# environment secrets
-.env
-.env.local
-.env.*.local
-
-# stenod runtime
+# Local runtime data (contains auth token and session DB)
 .stenod/
+*.log
 
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# scratch / audit files
-codebase_dump.txt
+# Audit and review output
+dead-code.txt
+internal-refs.txt
+phase-comments.txt
+todo-debug.txt
 count-tests.js
+stenod-tree.txt
+
+# Internal development process
+.claude/
+docs/
+scripts/
+AGENTS.md
+CLAUDE.md
+ANTIGRAVITY.md
+WORKPLAN.md
+connect_github.ps1
