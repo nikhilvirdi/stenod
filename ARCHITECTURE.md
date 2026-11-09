@@ -1,386 +1,331 @@
-# Stenod : Architecture & Design
+## Stenod : Architecture & Design
 
-This document explains what Stenod is, the problem it solves, how each part works, and the reasoning behind the major design decisions. It's the reference for anyone who wants to understand the system beyond the [README](./README.md): how the capture layer, causal graph, compiler, and delivery path fit together, and why they were built this way.
+This document describes how Stenod was designed, what was built from that design, and what testing showed. It is the reference for the intended architecture and for the reasons behind it. Each section states what was built and what was not. The project is closed, and the testing findings are summarized in the README.
 
-For install and usage, see the [README](./README.md). For exactly what's captured and the security posture, see [SECURITY.md](./SECURITY.md).
+Version 1.0 was implemented. Its filesystem capture, terminal capture through the attach command, CLI commands, storage layer, and compiler ran during testing. Most of version 2.0 was never built. Two research spikes were completed, and one schema change was written. The tool integrations, the interpretation layer, the scoreboard, and the delta handoff were never started. In testing, the handoff failed its main purpose: file entries carried only filenames, so a cold agent could not resume from them.
 
-**A note on versions.** Stenod 1.0 was a single daemon watching one project: filesystem saves, terminal exit codes, and an opt-in AI-provider network tap, compiled into a Handoff Manifest and copied to the clipboard. Everything below that isn't tagged otherwise is 1.0, still running, still true. Stenod 2.0 — the subject of most of this document — extends that same daemon to read the coding agents themselves (Claude Code, Codex, Kiro, Google Antigravity, Cursor), merge their reasoning into one shared graph, and interpret it into a current-truth scoreboard instead of a flat log. Same engine, wider ears.
+### Table of Contents
 
----
+1. [The Problem](#the-problem)
+2. [Existing Solutions](#existing-solutions)
+3. [What Stenod Was Meant to Be](#what-stenod-was-meant-to-be)
+4. [The Handoff Contract](#the-handoff-contract)
+5. [Features and Status](#features-and-status)
+6. [Interfaces](#interfaces)
+7. [System Design](#system-design)
+8. [Tech Stack](#tech-stack)
+9. [Design Trade-offs](#design-trade-offs)
+10. [Scope and Limitations](#scope-and-limitations)
+11. [Security, Privacy, and Trust](#security-privacy-and-trust)
+12. [Evaluation Strategy](#evaluation-strategy)
+13. [Cost](#cost)
+14. [Design Decision Log](#design-decision-log)
 
-## Table of Contents
+### The Problem
 
-1. [The Problem](#1-the-problem)
-2. [Existing Solutions](#2-existing-solutions--strengths-and-shortcomings)
-3. [What Stenod Is](#3-what-stenod-is)
-4. [The Handoff Contract](#4-the-handoff-contract)
-5. [Feature Overview](#5-feature-overview)
-6. [Interfaces](#6-interfaces)
-7. [System Architecture](#7-system-architecture)
-8. [Tech Stack](#8-tech-stack)
-9. [Why This Approach](#9-why-this-approach)
-10. [Scope & Known Limitations](#10-scope--known-limitations)
-11. [Security, Privacy & Trust](#11-security-privacy--trust)
-12. [Companion Website](#12-companion-website)
-13. [Open Source Posture](#13-open-source-posture)
-14. [Evaluation Strategy](#14-evaluation-strategy)
-15. [Cost](#15-cost)
-16. [Design Decision Log](#16-design-decision-log)
+AI-assisted coding sessions break at boundaries: rate limits, provider outages, context-window exhaustion, and a developer switching tools partway through a task. At that point, what gets lost is more than chat history. It is the reasoning behind the work: which decisions were made and why, which approaches were tried and rejected, which constraints still apply, and what the developer was in the middle of doing.
 
----
+Existing tools save conversations. The design targeted the layer beneath that, the intent a conversation carries.
 
-## 1. The Problem
+The failure modes the design identified fall into four groups:
 
-AI-assisted coding sessions collapse at boundaries: rate limits, provider outages, context-window exhaustion, or a developer deliberately switching tools mid-task. What's lost at that moment isn't just chat history. It's the *reasoning* — which architectural decisions were made and why, which approaches were tried and rejected, which constraints are still active, and what the developer was in the middle of doing.
+- Session breaks, such as context switches, session expiry, moving between machines, and an IDE that cannot show its own chat history.
+- Budget pressure, such as hidden context limits, rate limits, lossy automatic compaction, and cold cache reloads that spend usage just to rebuild context.
+- Memory decay, such as stale or conflicting rule files, memory that is never rechecked, and context carried across git branches.
+- Recovery failure, such as a raw history dump reviving an idea that was already rejected, or an agent re-deriving a fix that already existed.
 
-This isn't hypothetical. When Windsurf moved to quota-based billing in March 2026, the user backlash was documented and specific: developers got rate-limited mid-session and lost their flow. The pain is current, not speculative.
+All four come from one cause: work stops, and the reasoning does not survive the gap. A blank slate at least admits it knows nothing. A stale or partial context is more dangerous, because it lets an agent act confidently on a false premise. That risk pushed the design toward accurate current state rather than a complete archive.
 
-Existing tools save conversations. What actually gets lost is the intent behind the conversation.
+Agent execution problems, such as command loops or skipped steps, were excluded. They concern an agent misbehaving with full context, not lost context.
 
-Widening the lens past a single tool, the same root cause shows up in sixteen distinct, mapped failure modes, which group into four clusters feeding one underlying problem — call it amnesia:
+### Existing Solutions
 
-- **Session breaks** — context switching, session interruption or expiry, cross-machine continuity, an IDE failing to surface its own chat history, outright session auto-deletion.
-- **Budget pressure** — a hidden or smaller-than-advertised context window, rate limits, lossy auto-compaction, compaction firing mid-task, cold-cache reloads that burn usage just to re-establish where things stood.
-- **Memory decay** — stale or conflicting rule files (`CLAUDE.md`, `AGENTS.md`, IDE-specific rules), memory that goes stale without ever being re-checked, context bleeding across git branches or worktrees.
-- **Recovery failure** — a raw history dump reviving an idea that was already killed, an agent re-deriving a bug fix that was already found.
+The table below records the design's reading of each system when it was written. These comparisons were not re-verified during testing. Treat them as the reasoning behind the design, not as established facts about those products.
 
-All four feed the same root: work stops, and the reasoning doesn't survive the gap. A blank slate is at least honest about not knowing. A stale or half-remembered context is worse, because it lets an agent charge ahead confidently on a false premise.
-
-Deliberately excluded from this list: agent execution-reliability issues like command loops or silently skipped steps. That's a different category — an agent behaving badly while it has full context — and not the problem Stenod is built to solve.
-
----
-
-## 2. Existing Solutions — Strengths and Shortcomings
-
-| System | What it does well | Where it falls short for this problem |
+| System | Approach | Limitation for this problem |
 |---|---|---|
-| **Mem0** | Widely adopted, large ecosystem, simple SDK integration | In-band — requires the agent/API to be alive to read or write memory. Its open-source repo appears to have gone quiet as of early 2026; the hosted product is still live |
-| **Zep (Graphiti)** | Genuinely sophisticated temporal knowledge graph reasoning over conversational facts | Still in-band; models chat facts, not developer/codebase causal events; requires their service to be reachable |
-| **Letta (MemGPT)** | Serious, research-backed OS-inspired memory architecture for agents | In-band by design — the memory manager is part of the agent loop it's serving |
-| **MemPalace** | Markets itself as local-first with a zero-API-call philosophy | Its published benchmarks have been credibly called out as astroturfed; not a source to cite as evidence of anything |
-| **Supermemory** | Deep MCP integration, positioned specifically for coding agents | Called via MCP tool — requires the agent to successfully invoke a tool call, i.e., requires the agent to be reachable |
-| **projectmem** | Event-sourced, git-hook based, closest philosophical match to Stenod's own "memory as governance" framing | Still project-scoped rather than cross-tool; doesn't unify multiple concurrent agents into one graph |
-| **claude-mem** | Genuinely mature multi-tool capture — hooks-based across Claude Code, Codex, Gemini CLI, Antigravity's CLI, and bridged into Cursor's own hook system | Its core mechanism is AI-summarization: it compresses everything into opaque "observations." No notion of rejected-with-reason, no current-truth model — exactly the lossy pattern this project avoids |
-| **SpecStory** | Wraps CLI agents directly and captures editor extensions too (Cursor, Copilot), saving everything as searchable markdown | A raw, browsable archive, not an interpreted one. Solves "find that old conversation," not "hand me current truth" |
-| **Windsurf Cascade Memories / Cursor Notepads** | Zero-setup, deeply integrated, genuinely useful day to day | Vendor-locked to one IDE's own agent process and quota; can't hand off to a different provider; dies with that tool's own outage or rate limit |
-| **Manual copy-paste** | Requires no tooling at all | No filtering of dead ends or failed experiments, no chronology, triggers "Lost in the Middle" degradation on large dumps |
-| **Git** | The actual system of record for code state | Captures *what changed*, not *why*, not which constraints are still active, not what was rejected and why |
+| Mem0 | Hosted and SDK-based memory for agents | Works in-band, so it depends on the agent or API being reachable |
+| Zep (Graphiti) | Temporal knowledge graph over conversational facts | In-band, and models chat facts rather than codebase events |
+| Letta (MemGPT) | Memory manager inside the agent loop | In-band by design |
+| Supermemory | MCP-based memory aimed at coding agents | Requires the agent to make a successful tool call |
+| projectmem | Event-sourced memory driven by git hooks | Scoped to one project, and does not merge concurrent agents |
+| claude-mem | Hook-based capture across several tools, with AI summarization | Summaries replace the original record, and rejected decisions are not kept as first-class items |
+| SpecStory | Saves agent and editor sessions as searchable markdown | An archive rather than an interpreted current state |
+| Windsurf Cascade Memories, Cursor Notepads | Built into one IDE's agent | Tied to that tool, its quota, and its outages |
+| Manual copy-paste | Requires no tooling | No filtering of dead ends, and large dumps are hard for models to use |
+| Git | Records what changed | Does not record why, which constraints still apply, or what was rejected |
 
-Two patterns hold across this whole table. First, every in-band system shares a failure domain with the AI it's trying to help — none are built around the moment the AI itself is unreachable. Second, among the systems that do span multiple tools, none combine that reach with real handling of rejected content: they either summarize it away (claude-mem) or bury it undifferentiated in an archive (SpecStory). That combination — cross-tool reach, plus rejected decisions preserved as first-class facts with their reasons attached — is the actual gap Stenod fills.
+Two patterns stood out to the design. Most of these systems depend on the AI being reachable, so they fail at the same moment the AI does. The systems that span several tools either summarize rejected decisions away or leave them in an unsorted archive. The design aimed for both properties together: capture that survives an AI outage, and rejected decisions kept as first-class records with their reasons attached. Testing did not confirm the second property, because the scoreboard that would have provided it was never built.
 
----
+### What Stenod Was Meant to Be
 
-## 3. What Stenod Is
+Stenod was designed as a local, deterministic daemon. It would record a project's file changes, terminal outcomes, and, where a tool allowed it, the reasoning behind an AI agent's changes. It would then compile that record into a Handoff Manifest that a developer could paste into any AI tool to resume work.
 
-Stenod is a local, deterministic, out-of-band daemon. It captures the causal history of a coding session — file changes, terminal outcomes, the reasoning surfaced by the AI tools themselves, and optionally raw AI-provider network traffic — and compiles it into an attention-structured Handoff Manifest the moment a developer needs to resume, in any AI tool, including one they weren't previously using, and across however many tools are working the same project at once.
+The central design goal was that the recorder would not share a failure domain with the AI it records. A recorder that depends on the AI being alive cannot help when the AI is down. Stenod was meant to keep working in that situation, and to capture one project even when several tools were working on it at once.
 
-The one sentence that matters: it's *not a better memory service — it's a system that doesn't share a failure domain with the AI it's recording.*
+It was not designed as a general memory service. The design focused on one failure mode: reasoning that disappears when a session does.
 
-It isn't pitched as "the first AI memory system." That space is crowded and well-funded, as §2 shows. Stenod is a narrowly-scoped tool for one real, underserved failure mode: reasoning that dies the moment a session does.
+The name comes from stenographer, someone who transcribes exactly what happens so another person can read it later. It also follows the Unix convention for daemon names, as in sshd and httpd.
 
-The name comes from *stenographer* — someone who silently and exactly transcribes what happens for someone else to read later — and it reads naturally as a Unix daemon name (`stenod`, in the tradition of `sshd`, `httpd`).
+### The Handoff Contract
 
----
+The central idea was a scoreboard of current truth rather than a log. Each signal, such as a file change, a captured decision, or a rejected approach, would propose an entry in the form topic = answer. If the topic already had an entry, the newer entry would become current, and the older one would move to history. Nothing would be deleted. Old entries would keep the reason they lost.
 
-## 4. The Handoff Contract
+Each entry would have one of three states:
 
-Everything Stenod produces is shaped by one contract, and it's worth stating on its own before getting into mechanism, because it's the thing that actually differentiates this project from the tools in §2.
+- Settled: the standing answer to a question the project has resolved.
+- Rejected: an approach that was tried or proposed and then abandoned, with the reason attached. The design kept this state first-class rather than treating it as metadata. Outside reviewers suggested demoting it, and the design kept it (see section 14).
+- Open: a question that has been raised but not resolved.
 
-Stenod doesn't try to classify a conversation into buckets after the fact. It maintains a live scoreboard of the project's current truth. Every new signal — a file change, a captured decision, a rejected approach — proposes an entry: `topic = answer`. If that topic is already on the board, the newer entry wins and the older one moves to history, but it is never deleted. It's marked, with the reason it lost, and kept permanently visible next to the decision that replaced it.
+The goal was that a fresh agent could see what was true, what had been tried, and why it was dropped, so it would not propose a dead idea without knowing its history.
 
-Concretely, every entry carries one of three states:
+Status: the scoreboard was never built in the running daemon. The schema includes a DECISION node type and the resolution fields, and unit tests cover them, but no live capture path writes to them. In testing, no settled, rejected, or open entries appeared from real code changes or from an unresolved architectural question. The only content that appeared came from constraints recorded by hand with `stenod anchor`.
 
-- **Settled** — the current, standing answer to some question the project has already resolved.
-- **Rejected** — an approach that was tried or proposed and explicitly abandoned, with the reason it lost attached. First-class, not metadata — this is deliberate, and it survived pushback from outside reviewers who suggested demoting it (see the decision log).
-- **Open** — a question raised but not yet resolved.
+### Features and Status
 
-Nothing is ever silently overwritten and nothing is ever silently dropped. A fresh agent reading the board sees not just what's true now, but what was tried and rejected and why, so it can't re-propose a dead idea in good faith — the reason is sitting right there next to it.
+Each feature below is listed with what happened in testing. "Never built" means no code exists for it. "Ran" means the command or feature executed without recorded failures, but its output was not evaluated for quality.
 
----
-
-## 5. Feature Overview
-
-- **Multi-tool, multi-tier capture:** structured hooks where a tool exposes them (Claude Code, Codex, Kiro), plaintext session artifacts where it doesn't (Google Antigravity), a borrowed format parser for tools whose storage is undocumented (Cursor), and a filesystem-and-terminal fallback underneath all of them that works regardless of which tool is in front of it.
-- **Causal graph storage** with typed edges (`REPLACES`, `CAUSED_BY`, `CONTRADICTS`, `DEPENDS_ON`, `RESOLVES`) instead of a vector store.
-- **The scoreboard interpretation model** (§4) — settled / rejected / open, nothing deleted, rejected-with-reason first-class.
-- **A three-layer, cost-aware interpreter** — deterministic structural rules, a local NLP pass, and an optional, fully user-controlled AI tie-breaker for the genuinely ambiguous residue.
-- **Cross-tool timeline merge** — when several agents work one project concurrently, their file activity anchors a single shared timeline, and each tool's reasoning attaches to the file event it explains.
-- **FSM-based intent classification** — distinguishes deliberate architectural decisions from panic fixes by state-transition pattern, not keyword heuristics.
-- **Last-Writer-Wins conflict resolution** — contradicting decisions are resolved automatically rather than both landing in a future manifest as if still live.
-- **Deterministic compiler** — greedy-by-ratio knapsack packing plus a local improvement pass, with a forced primacy zone for constraints and settled decisions.
-- **U-shaped manifest structuring** — exploits transformer primacy/recency attention bias, citation-backed (Liu et al. *Lost in the Middle*, Xiao et al. *Attention Sinks*).
-- **Two handoff views** — `--full` (the complete standing scoreboard) and `--new` (just what's changed since the last handoff), both compiled, neither ever a raw dump.
-- **Stale rule-file detection** — Stenod reads a tool's own instruction files (`CLAUDE.md`, `.cursor/rules`, and similar) and flags them against current truth. It never edits them.
-- **Dependency-change tracking** — package additions, removals, and swaps captured from manifest files as first-class decisions, not incidental noise.
-- **"Next Actions" block** — surfaces the current unresolved state as an explicit next step, not just raw context.
-- **Manifest audit log** — every compiled handoff is logged with its exact node selection, queryable and auditable.
-- **Feedback tagging** (`--worked` / `--failed`) — the mechanism for ever having real data to justify tuning retrieval weights later.
-- **Time-windowed rejection** (`--since <duration>`) — prune a bad session's nodes from all future manifests.
-- **Secret protection, two layers** — never watching secret-adjacent paths at all (primary), regex redaction as a backstop (secondary).
-- **Explicit, reversible tool integration** (`stenod integrate` / `stenod detach`) — wiring into a tool's hook system is opt-in and announced, the same way the network-capture tier already is.
-- **Clean opt-in/opt-out** for the network capture tier, including full CA-cert removal.
-- **Daemon crash recovery** via systemd/launchd auto-restart.
-- **Schema versioning** for safe upgrades across releases.
-- **Zero telemetry** — independently verifiable, since the project is open source.
-
----
-
-## 6. Interfaces
-
-The CLI is the primary interface. There is a companion website (§12), but it's a local, read-only view of what the CLI already produces — it doesn't replace it.
-
-| Command | Purpose |
-|---|---|
-| `stenod init` | Set up daemon + DB for a project directory, generate local auth token, install systemd/launchd unit |
-| `stenod start` | Start the ingestion daemon (filesystem capture) |
-| `stenod stop` | Stop the daemon |
-| `stenod status` | Daemon health, node count, last event timestamp, any stale rule files or flagged conflicts |
-| `stenod attach` | Bridge the current interactive shell's terminal activity to the daemon (run per terminal session) |
-| `stenod integrate <tool>` | Opt in to structured capture for a supported tool (Claude Code, Codex, Kiro, Antigravity, Cursor) — wires hooks or registers auxiliary watch paths, announced, reversible |
-| `stenod detach <tool>` | Remove exactly what `integrate` added for that tool, and confirm the removal |
-| `stenod handoff [--full \| --new]` | Compile and copy the Handoff Manifest to clipboard. Defaults to `--full`; a hint below the output points to `--new` for a leaner, latest-changes-only view |
-| `stenod handoff --worked` / `--failed` | Tag the outcome of the most recent manifest in the audit log |
-| `stenod reject --since <duration>` | Mark nodes in a time window as `REJECTED`, excluded from all future manifests |
-| `stenod anchor "<text>"` | Create a `CONSTRAINT` node directly from the CLI |
-| `stenod enable-network-capture` | Opt in to the AI-provider network capture tier (installs local CA, starts proxy) |
-| `stenod disable-network-capture` | Fully revert the CA trust and proxy settings |
-| `stenod mcp` | Run as an MCP server over stdio, exposing the handoff manifest as a resource |
-
-**Terminal capture note:** `stenod start` alone captures filesystem events only. Terminal capture requires running `stenod attach` in each interactive shell you want captured — the daemon runs detached and has no TTY of its own to spawn a shell into.
-
-**MCP convenience interface:** `stenod handoff` is also exposed as an MCP resource, so an already-reachable agent can pull the manifest directly instead of copy-pasting. This is additive convenience only; the system always degrades gracefully to clipboard-only.
-
----
-
-## 7. System Architecture
-
-### 7.1 Capture Layer
-
-Every supported tool falls into one of four tiers, based on what it actually exposes — not on how much we'd like it to expose.
-
-**Tier A — structured hooks (richest signal, official interface).** Claude Code, Codex, and Kiro each ship a lifecycle hook system: events like `SessionStart`, `PostToolUse`, `PreCompact`, and `Stop` fire structured JSON at exact semantic boundaries. Claude Code's own documentation is explicit that its raw session JSONL is internal and can change between releases — hooks are the sanctioned interface, and Stenod treats them as such. `PreCompact` is the standout: it fires immediately before the tool's own lossy auto-summarization runs, which means Stenod can snapshot the clean, un-summarized state at the one moment it would otherwise be lost. Kiro additionally writes `requirements.md`, `design.md`, and `tasks.md` straight into the repo as structured plaintext — much of a handoff's shape already built by the tool itself.
-
-**Tier B — plaintext artifacts, no hooks.** Google Antigravity has no hook system, but it writes a full session record to `~/.gemini/antigravity/brain/<conversation-id>/` — a JSONL transcript plus maintained markdown artifacts (`implementation_plan.md`, `task.md`, `walkthrough.md`). Stenod reads this directly. This also happens to solve a specific, named pain point: Antigravity's own UI has been known to fail to surface its history, and reading the brain folder directly sidesteps that failure entirely.
-
-**Tier C — borrowed parsers for undocumented formats.** Cursor's raw chat storage is an undocumented, versioned SQLite blob with no published schema, and it has changed shape multiple times already. Reverse-engineering it in-house would mean permanently chasing a format we don't control. Instead, Stenod borrows a maintained open-source parser for it, wrapped behind a thin adapter so the rest of the codebase never depends on that parser's types directly — if the format shifts again, only the adapter changes. Cursor's *agent* hook system (tool calls, file edits) is Tier A-equivalent and captured that way; only its human-facing chat UI storage falls into this tier.
-
-**Tier 0 — filesystem and terminal, the fallback under everything.** `chokidar` watches the project directory, and `stenod attach` bridges terminal activity, exactly as in Stenod 1.0. This tier doesn't need any tool's cooperation — it watches the same shared filesystem regardless of which tool touched it, which means it already works for VS Code with GitHub Copilot and Windsurf, neither of which exposes anything more structured than this. It also means every tool, no matter its tier, gets at least the ground-truth signal of what changed and whether commands passed.
-
-**Dependency-change capture.** Package additions, removals, and swaps are watched via the manifest files themselves — `package.json`, `requirements.txt`, `Cargo.toml` — and the exit codes of install commands, never by reading installed package contents. A dependency change becomes a `DECISION` node like any other, so a cold resume knows what the project currently depends on and what it tried and dropped.
-
-**Integration is explicit and reversible.** `stenod integrate <tool>` writes Stenod's own hook entries into a tool's configuration additively, never touching anything already there, and prints exactly what it wrote. `stenod detach <tool>` removes exactly that, then re-reads the file to confirm the removal actually took effect — the same confirmed-clean-undo pattern the network-capture tier already uses. Neither command runs automatically from `init` or `start`.
-
-**Hooks are configured globally but resolved per-project.** A tool's hook configuration is typically user-level, not project-level, so a single integration would otherwise fire for every project that tool touches. Stenod's hook script resolves the working directory of each event upward looking for a `.stenod/` directory; if one exists, the event is delivered there, and if not, the script exits immediately and captures nothing. One global hook, but capture only happens in projects that explicitly opted in.
-
-**Antigravity's brain folder lives outside the project root.** Because it sits in the user's home directory rather than inside any project, `stenod integrate antigravity` registers it as an auxiliary watch path tied to a specific project, and matches conversations to that project by the workspace path they reference. A conversation that doesn't reference the current project is left alone rather than guessed at.
-
-**Hook scripts never block the agent they're watching.** Every script Stenod installs is fire-and-forget: it hands its payload to the daemon over the existing authenticated socket and exits immediately. If the daemon is unreachable, the payload spools to a local file and the script still exits without waiting. A recorder that can stall the thing it's recording has stopped being out-of-band, so this is treated as a hard rule, not a best effort.
-
-**Ingestion queue:** all tracks — hooks, brain-folder reads, filesystem, terminal — feed one serialized queue into WAL-SQLite, with overflow spilling to an append-only disk buffer, drained FIFO, never silently dropped.
-
-**Security baseline, workspace sandboxing, and daemon crash recovery** are unchanged from 1.0: a token generated at `stenod init`, one daemon per resolved project root, and systemd/launchd auto-restart.
-
-### 7.2 Storage Layer — Causal Graph
-
-The three-table shape from 1.0 is extended, not replaced.
-
-**`graph_nodes`** gains three things:
-
-| column | type | notes |
+| Feature | Status | Notes |
 |---|---|---|
-| `type` | ENUM | now also includes `DECISION`, alongside the existing `FILE_STATE`, `TERMINAL_ERROR`, `TERMINAL_SUCCESS`, `PROVIDER_CAPTURE`, `CONSTRAINT` |
-| `resolution` | ENUM, nullable | `SETTLED` / `REJECTED` / `OPEN` — populated only on `DECISION` nodes, governs scoreboard state |
-| `resolution_reason` | TEXT, nullable | the "why" behind a rejection or a settled choice; required whenever `resolution = REJECTED` |
-| `source_tool` | TEXT | which capture surface produced this node (`claude-code`, `antigravity`, `terminal`, `fs`, or `llm-tiebreaker` for an AI-confirmed match) |
-| `git_branch` | TEXT, nullable | taken from hook payload metadata when present, otherwise read from `.git/HEAD` at capture time |
-| `status` | ENUM | gains a new value, `SHADOWED`, alongside the existing `ACTIVE`, `REJECTED`, `SUPERSEDED` |
+| Filesystem capture | Worked in testing | Reliable across a full build session |
+| Secret exclusion | Worked in testing | Skips `.env` files, `node_modules`, files in `.gitignore`, and files over 500KB |
+| Constraint recording (`stenod anchor`) | Worked in testing | Full text appears in the handoff |
+| Terminal capture (`stenod attach`) | Not tested | Unix and Mac only. Records one aggregate node per shell session |
+| Handoff Manifest content | Failed | File entries contained only filenames |
+| Supersession of repeated edits | Failed | One file accumulated 10 identical active records |
+| Time-window rejection (`stenod reject`) | Partly worked | Removed the current version of working files along with the mistake |
+| Status reporting (`stenod status`) | Partly worked | Counts rejected records, so the count differs from the next handoff |
+| Daemon start | Partly worked | Reports success without checking that the daemon started |
+| Daemon reliability | Failed | Stopped silently on Windows, with an empty error log |
+| Scoreboard (settled, rejected, open) | Never built | No live path writes decision entries |
+| Typed causal graph edges | Partly built | Only `CONTRADICTS` edges are created, between constraint records |
+| Compiler and U-shaped output | Ran | Output quality was limited by the capture failures above |
+| Clipboard delivery | Ran | Used by `stenod handoff` |
+| MCP resource (`stenod mcp`) | Ran | No failures recorded |
+| Tool integrations (Claude Code, Codex, Kiro, Antigravity, Cursor) | Never built | Planned as hook and session-file capture |
+| `stenod integrate` and `stenod detach` | Never built | Documented but absent from the CLI |
+| Delta handoff (`--new`) | Never built | No diffing against earlier manifests exists |
+| `--full` flag | Missing | Bare `handoff` already behaves as `--full` |
+| Dependency-change capture | Never built | Planned to track manifest file changes as decisions |
+| AI tie-breaker | Never built | No client code exists |
+| Stale rule-file detection | Never built | No rule-file reader exists |
+| Network capture tier | Not tested | Unix and Mac only |
+| Local dashboard | Never built | Planned as a read-only view served from localhost |
 
-`status` and `resolution` answer two different questions and are deliberately kept as separate columns rather than one overloaded enum: `status` governs whether a node is live in the graph at all, `resolution` governs where a decision sits on the scoreboard.
+Of the planned version 2.0 work, two research spikes were completed and one schema change was written. The tool integrations, the interpretation layer, the cross-tool timeline, the delta handoff, dependency capture, and stale rule-file detection were not started.
 
-**`graph_edges`** gains one edge type: `RESOLVES`, linking a later `DECISION` node to the `OPEN` node it answers, so the trail from question to answer is queryable the same way `REPLACES` already tracks supersession.
+### Interfaces
 
-**`manifest_log`** is unchanged.
+The CLI was the only interface. The table lists each command, what it was meant to do, and what happened in testing. Commands that were never built are listed so the intended surface stays visible.
 
-The migration runs through the existing `PRAGMA user_version` mechanism — old rows are backfilled with a best-guess `source_tool` from their existing node type, and everything else defaults to null. Nothing is rewritten or lost.
-
-**Double-capture and shadowing.** Once a tool's hooks are integrated, the same event can be seen twice — once by the hook, once by the terminal track that's watching regardless. Because the two versions carry different text, content hashing alone won't catch the duplicate. When a hook event and a terminal event are matched — same command text, overlapping time window, same session — the terminal-track copy is marked `SHADOWED`: kept in the graph for audit, but excluded from the compiler's view, since the hook version is richer. Where a confident match can't be made, both are left active; a duplicate on the board costs a glance, a wrongly hidden node costs the whole point of keeping history.
-
-### 7.3 Interpretation
-
-Turning raw reasoning text into a scoreboard entry runs through three layers, cheapest first, and each layer is allowed to abstain rather than guess.
-
-**Layer 0 — structural, no language involved.** Most decisions never need text interpretation at all. A file overwrite superseding an earlier file-state, a failing command followed by an edit that makes it pass, a dependency swap in a manifest file — these are read straight off the filesystem-and-exit-code spine, using the same FSM and Last-Writer-Wins machinery built for Stenod 1.0. This layer costs nothing and catches the majority of cases.
-
-**Layer 1 — deterministic text signals.** For reasoning text that Layer 0 can't resolve, a fixed rule pass looks for high-confidence markers: explicit rejection language ("instead of", "let's not", "reverting"), decision language ("we'll use", "settled on"), and the existing constraint comment syntax. This layer is built on `wink-nlp` — a zero-dependency, offline, TypeScript-native library used for sentence splitting, tokenization, and negation detection, which is a meaningfully better foundation than hand-rolled regex for exactly the cases (negation scope, sentence boundaries) that regex handles worst. This layer only fires on genuine confidence and is expected, honestly, to resolve something on the order of half of ambiguous cases — the rest fall through.
-
-**Layer 2 — an optional AI tie-breaker.** Whatever Layers 0 and 1 can't resolve goes here, and only here — never the full transcript, only the ambiguous span plus minimal surrounding context. This layer is entirely optional: without it configured, Stenod works completely, and anything this layer would have resolved simply lands as `OPEN` instead — a visible, flagged uncertainty rather than a silent guess. When enabled, it runs on the user's own API key, is triggered only at handoff time (never automatically, never in the background), and can be turned off entirely at any time.
-
-**Topic identity.** Before two decisions can be compared, Stenod has to know they're about the same topic. The path here is the same shape as the interpretation cascade: an explicit `constraint[key]` match wins outright; failing that, Layer 1 looks for shared identifiers, a shared file, or explicit referential language ("instead of X"); failing that, both entries stay active and a `POSSIBLE_CONFLICT` marker is raised rather than either merging or duplicating silently. The optional Layer 2 tie-breaker can confirm or dismiss a flagged pair when enabled.
-
-**Timing.** Layers 0 and 1 run continuously at ingest time, since they're free and deterministic — this is what keeps `status`, staleness flags, and conflict flags current between handoffs. Layer 2 runs only when a handoff is actually requested, and only if it's configured. Between handoffs, anything genuinely ambiguous simply sits as `OPEN`.
-
-### 7.4 Cross-Tool Timeline Merge
-
-When several agents work one project concurrently — one writing code, another reviewing it, a third running tests — their file activity already lands correctly ordered in one graph, because it's one filesystem with one clock. What doesn't automatically line up is each tool's *reasoning*, which arrives through separate channels with timestamps that can't always be trusted to agree.
-
-The resolution: the filesystem is the backbone. A piece of reasoning is matched to the file event it explains — by which file it references first, and only by timestamp as a tiebreaker — rather than trusted to carry its own reliable clock. Reasoning that doesn't reference any file yet becomes an `OPEN` entry, resolved once a file event arrives to anchor it.
-
-The one case this doesn't fully resolve: two agents writing the same file within the same second, with contradictory reasoning attached to each write. The filesystem still records a real write order even then, and Last-Writer-Wins applies exactly as it does for a single tool — but whether the second write was a deliberate override or an accidental collision isn't something capture alone can determine. Rather than guess, this is surfaced as a flagged, contested entry for the user to glance at.
-
-### 7.5 Compilation & Delivery
-
-The compiler from 1.0 — greedy-by-ratio packing, a local improvement pass, tiered content inclusion, U-shaped assembly — is unchanged in mechanism. What's new is what it's compiling and how much of it it shows.
-
-**Two views, both compiled, neither a dump.** `stenod handoff --full` produces the complete standing scoreboard: every settled decision, and every rejected one with its reason, cleanly compiled — not the raw history of how each decision was reached. `stenod handoff --new` produces only what's changed since the previous handoff. Both run the same conflict resolution; a superseded decision never appears as if it were still live in either view. The bare `stenod handoff` defaults to `--full`, on the reasoning that a cold return should never accidentally get a thin picture — with a line underneath pointing to `--new` for the leaner option.
-
-**Rejections surface as one-liners, always.** Every rejected decision appears in the manifest — nothing is held back — but through the same tiered-inclusion mechanism that already governs manifest content generally: a rejection reads as "what was rejected, and why," not as a replay of the discussion that led there. That's what lets "show every rejection, always" stay compatible with a manifest that doesn't bloat into the raw dump the whole project exists to avoid.
-
-**Stale rule files are flagged, never edited.** Stenod reads a tool's own instruction files and checks them against the current scoreboard. A mismatch surfaces at the moments it's actually actionable — on `handoff`, on `status`, and the instant a new decision contradicts what a rule file claims — and it stays visible until the file is actually updated. It never fires on a timer, and Stenod never writes to these files itself; touching them would risk becoming a source of the exact staleness it's meant to catch.
-
-### 7.6 Delivery
-
-Clipboard copy remains the guaranteed path, with zero dependency on anything being reachable. The optional MCP exposure and the optional local dashboard (§12) are both convenience layers on top of it; both degrade gracefully to clipboard-only. Every compiled manifest is logged before delivery.
-
----
-
-## 8. Tech Stack
-
-The 1.0 stack is unchanged and carries forward as-is: Node.js/TypeScript, `better-sqlite3` (WAL), `chokidar`, `node-pty`, `web-tree-sitter`, `gpt-tokenizer`, `commander`, `mockttp` + `node-forge`, `@modelcontextprotocol/sdk`, `vitest`, `eslint` + `prettier`. Two additions for 2.0:
-
-| Component | Choice | Why |
+| Command | Intended purpose | Status |
 |---|---|---|
-| Deterministic text interpretation (Layer 1) | `wink-nlp` | Zero runtime dependencies, MIT-licensed, fully TypeScript, runs offline — fits the no-network-calls and determinism invariants directly, and its sentence-boundary and negation handling is a real improvement over hand-rolled regex. Requires its language model package installed alongside it, and both are pinned to a supported Node version in CI |
-| Tier-C format parsing | A borrowed, existing open-source parser for the target undocumented format, wrapped behind a thin Stenod-owned adapter | Reverse-engineering an undocumented, already-multiple-times-changed schema in-house means permanently chasing a format we don't control. The specific package is subject to the usual vetting — license, maintenance activity, dependency footprint — before being locked |
+| `stenod init [--reset]` | Set up the daemon and database for a project. `--reset` rotates the local token. | Worked |
+| `stenod start [--project-root] [--foreground]` | Start the ingestion daemon, with filesystem capture by default | Worked, but did not confirm startup |
+| `stenod stop` | Stop the daemon | Worked |
+| `stenod status` | Report health, node count, last event, and flagged conflicts | Partly worked |
+| `stenod attach` | Bridge a shell's terminal activity to the daemon, once per shell | Not tested (Unix and Mac) |
+| `stenod integrate <tool>` | Opt in to structured capture for a tool, announced and reversible | Never built |
+| `stenod detach <tool>` | Remove what `integrate` added and confirm the removal | Never built |
+| `stenod handoff [--full \| --new]` | Compile and copy the Handoff Manifest. `--full` is the default. `--new` shows changes since the last handoff. | Partly worked. `--new` never built. |
+| `stenod handoff --worked` / `--failed` | Tag the outcome of the most recent manifest | Ran |
+| `stenod anchor "<text>"` | Create a constraint record | Worked |
+| `stenod reject --since <duration>` | Exclude records from a time window from future manifests | Partly worked |
+| `stenod enable-network-capture` / `disable-network-capture` | Opt in to AI-provider traffic capture through a local certificate authority and proxy, and undo it fully | Not tested (Unix and Mac) |
+| `stenod mcp` | Serve the manifest as an MCP resource over stdio | Ran |
 
-No Python, and none is planned. Embeddings and semantic scoring remain out of scope, which is what made the single-runtime choice sound in the first place, and a second language runtime would reintroduce exactly the cross-process bridge that decision was made to avoid.
+Terminal capture never ran inside the daemon. A detached daemon has no terminal to attach to, so capture runs through `stenod attach` in each shell that should be recorded. Clipboard delivery was the path meant to work with nothing else reachable. The MCP resource was a convenience layer on top of it.
 
----
+### System Design
 
-## 9. Why This Approach
+This section first describes what was built, then the planned capture tiers, the planned interpretation layers, and the compiler, which was built and is the part that turned records into output.
 
-Restating §2's table as the core differentiation: Mem0, Zep, Letta, Supermemory, Cascade Memories, and Cursor Notepads are all in-band. claude-mem and SpecStory span multiple tools the way Stenod does, but neither preserves rejected decisions as first-class facts — one summarizes them away, the other buries them in an unsorted archive. Stenod is the only system in this comparison built around both properties at once: surviving the moment the AI is unreachable, and keeping what was rejected, and why, permanently visible rather than lossily compressed or lost in a pile.
+#### What Was Built
 
-Being open source strengthens this claim in a way a closed-source competitor structurally can't match. The "zero network calls except an explicit, user-controlled allowlist" promise is checkable by reading the code, rather than something a user has to take a vendor's word for.
+A file watcher (chokidar) observes the project directory. The file-state handler writes one node for each distinct file content, so every save with new content creates a row.
 
----
+Terminal activity arrives through `stenod attach`, which reports one aggregate node when a shell session ends, not one node per command. An earlier version spawned a placeholder shell inside the daemon. Its idle prompt output polluted handoff manifests with escape codes, so terminal capture was removed from the daemon process, and `attach` became the only path.
 
-## 10. Scope & Known Limitations
+All events enter one serialized ingestion queue, which writes to SQLite in WAL mode. When a write fails, the error is caught and discarded without a log entry. That choice kept one bad event from crashing the daemon, but it also hid write failures from the user and made the silent daemon death in testing hard to diagnose.
 
-Deliberately out of scope for this version:
+#### Storage
 
-- Cross-file program-dependence-graph construction
-- Adaptive or learned weight tuning (kept static and inspectable, by design)
-- Full Windows terminal-capture support (`stenod attach` and the network tier remain Unix/Mac only)
-- Any *required* AI dependency — the tie-breaker layer is opt-in end to end
-- Certificate-pinned applications (invisible to the opt-in network tier)
-- A hosted or cloud-relayed version of the dashboard — see §12's tripwire
-- OpenAI's Codex is a supported Tier-A capture surface architecturally, but isn't currently a build priority
-- VS Code with GitHub Copilot and Windsurf have no dedicated capture module — both fall back to Tier 0 (filesystem and terminal) only, since neither exposes a stable, documented session format or hook system worth building against
-- Cursor's human-facing chat history remains Tier C (undocumented storage, borrowed parser); only its agent tool-call activity is captured with Tier-A richness
-- Perfect ordering of two agents writing the same file within the same second, with genuinely contradictory intent — the filesystem gives a real write order and Last-Writer-Wins applies, but whether an override was deliberate isn't something capture alone can determine, so it's surfaced as a flagged, contested entry instead
-- The AI tie-breaker's accuracy has a real ceiling on genuinely ambiguous language; because nothing is ever deleted, a mislabel is correctable, but not automatically caught
+The live schema holds file-state, constraint, and terminal records, plus a manifest log that records every compiled manifest. The only edge type created in live code is `CONTRADICTS`, between constraint records that share a key. `REPLACES`, `CAUSED_BY`, and `DEPENDS_ON` exist in the schema and in test fixtures, but no live code writes them.
 
----
+Because file states are keyed on a hash of their content, each distinct save creates a new row. Nothing links the newer row to the older one, so no file state is ever superseded. The planned fix is a `REPLACES` edge and a status change on each save. That fix was not built.
 
-## 11. Security, Privacy & Trust
+The 2.0 schema additions were designed in full: a DECISION node type, resolution and resolution-reason fields, a source-tool column, a git-branch column, a SHADOWED status, and a RESOLVES edge. Only the DECISION type and the resolution fields were built, and they are not used by live code. The other additions do not exist in the schema.
 
-- **Zero telemetry, hard invariant** — no phone-home, ever, independently verifiable since the code is open.
-- **Broad read reach, with a fixed, unchanged exclusion list** — `.env` files, `.git/`, `node_modules/`, build output, anything the project's own `.gitignore` excludes, and files over 500KB stay out of capture entirely, exactly as in 1.0. Dependency tracking reads manifest files and install outcomes only, never installed package contents.
-- **Tool integration is opt-in and reversible** — `stenod integrate` / `stenod detach` follow the same announced-install, confirmed-uninstall pattern the network-capture tier already established, rather than silently modifying a tool's configuration.
-- **Rule files are read-only** — Stenod flags staleness in a tool's own instruction files but never writes to them, which also means it can never become a source of the staleness it's built to catch.
-- **The AI tie-breaker is fully optional and user-funded** — no key means the tool still works in full; a key, when supplied, is the user's own, spending only at handoff time, never silently.
-- **The local dashboard never leaves the machine** — see §12.
-- **Two-layer secret protection and auth on every local connection** carry forward unchanged from 1.0.
-- **Full opt-out path** for the network tier, including CA removal, remains unchanged.
+#### Planned Capture Tiers (Never Built)
 
-See [SECURITY.md](./SECURITY.md) for the plain-language account of exactly what is captured, where it's stored, and what each opt-in tier does and doesn't do.
+The 2.0 design grouped coding agents into capture tiers based on what each one exposes:
 
----
+- Tier A: structured lifecycle hooks, for Claude Code, Codex, and Kiro. The design planned to read events such as session start, tool use, pre-compaction, and stop, and to take the snapshot before the tool summarized its own context.
+- Tier B: plaintext session artifacts, for Google Antigravity, which has no hook system. The design planned to read the session files directly.
+- Tier C: a borrowed parser for Cursor's undocumented chat storage, wrapped behind a thin adapter so a format change would affect only that adapter.
+- Tier 0: filesystem and terminal capture, which was built and works under any tool.
 
-## 12. Companion Website
+The design also planned several rules for these integrations. Hook scripts would hand their payload to the daemon and exit at once, so they could never stall the agent. Each hook would deliver an event only to a project that had a `.stenod/` folder, because tool hook configuration is global. Integration would be explicit, announced, and reversible through `integrate` and `detach`.
 
-A small website exists alongside the CLI, and it splits cleanly into two pieces that are easy to conflate but need to stay separate.
+The capture-surface spike examined Claude Code hook payloads and Antigravity session files. It found that hook payloads did not include the user's own prompt text, only tool activity and the assistant's final message. The planned fallback was to read the transcript file for rejection reasoning. Neither the fallback nor any tier was built.
 
-**A documentation site** — architecture, install steps, command reference, policies — is a normal static site, deployed and reachable like any project page. It reads no user data and talks to no daemon, so there's nothing sensitive about deploying it publicly.
+#### Interpretation (Planned, Not Built)
 
-**A live dashboard**, showing current handoffs and in-progress jobs updating in real time, runs entirely on the user's own machine: served from `localhost` by the user's own daemon, reading their own local database. This is not a hosted service, and there is no login, because there is nothing to log into — it's the user's own machine talking to itself.
+The design turned raw reasoning into scoreboard entries in three layers, cheapest first, with each layer allowed to abstain.
 
-This split exists because the alternative — routing a user's local data to a server so it can be viewed remotely, even with a stated policy of not persisting it — would turn "nothing is ever sent anywhere else" from a structural guarantee into a promise the user has to trust. That downgrade is precisely what separates Stenod from the in-band tools in §2, so it's treated as a hard line rather than a convenience trade-off. If remote viewing is ever built, the only architecture that preserves the guarantee is an end-to-end encrypted relay where the server never sees usable plaintext — a substantial project of its own, and not something to fold into a dashboard casually.
+Layer 0 was meant to read structural signals from file events and command exit codes, such as a file overwrite that supersedes an earlier state or a dependency swap in a manifest file. It would reuse the finite state machine and last-writer-wins conflict resolution. Layer 1 was meant to apply deterministic text rules for rejection and decision language, using wink-nlp for sentence splitting and negation. Layer 2 was an optional AI tie-breaker that would run only at handoff time, only on ambiguous spans, on the user's own key, and never on a full transcript.
 
-Both pieces of the website are sequenced after the capture-and-interpretation engine is working, not before. Building a dashboard against a data model that's still moving means building it twice.
+Topic identity was planned as a three-step ladder: an explicit constraint key first, then shared identifiers or referential language, and then a flag marking a possible conflict instead of a silent merge.
 
----
+Status: the finite state machine and last-writer-wins code exist and have unit tests, but they are not connected to decisions. The `COMMIT` event is never fired, so the `DIFF_SUBMIT` and `PROVISIONAL_PANIC` states cannot be reached. The anti-rot timer, which was meant to reset a runtime error stuck for 600 seconds, exists and is tested, but the daemon never starts it. Layers 0 and 1 were never built, and Layer 2 has no client code.
 
-## 13. Open Source Posture
+#### Cross-Tool Timeline (Planned, Not Built)
 
-- **License:** MIT.
-- **Repo scaffolding:** README, LICENSE, SECURITY.md, and this document. There's no `CONTRIBUTING.md` and no active solicitation of external PRs at this stage — a deliberate early-stage stance. The license governs what others may legally do with the code; it says nothing about whether contributions are currently being reviewed. Contribution infrastructure can be added later without changing anything already built.
-- **Distribution:** npm, package name `steno-daemon` (the CLI command itself is `stenod`).
+The design treated the filesystem as the backbone. Reasoning from several agents would attach to the file event it explained, matched first by the file it referenced and only then by timestamp. Reasoning that referenced no file would stay open until a file event anchored it. Two agents writing the same file within the same second, with contradictory reasoning, would be flagged as contested rather than resolved by guesswork. No capture from more than one agent exists, so none of this was tested.
 
----
+#### Compilation and Delivery
 
-## 14. Evaluation Strategy
+The compiler was built, and it is the part that produced the manifest in testing. It packs records with greedy-by-ratio selection, runs a local improvement pass, and arranges the output in a U-shape: settled decisions and constraints first, causal history in the middle, and next actions last. The arrangement follows research on attention in long contexts (Liu et al., *Lost in the Middle*, 2023; Xiao et al., *Efficient Streaming Language Models with Attention Sinks*, 2023).
 
-No invented, unvalidated fidelity score. Two tiers, both honest:
+Each record receives a utility score: 0.4 × decay + 0.4 × centrality + 0.2 × constraint priority. Records above 0.6 get a bounded excerpt of their content. Constraint records always get their full text. Everything else gets a one-line summary.
 
-1. **Native, cheap, deterministic:** exact-identifier recall — what fraction of function names, error codes, and variable names present in source nodes also appear verbatim in the compiled manifest. No ML, no embeddings, fully unit-testable. This now needs to run against multi-tool capture, not only the original filesystem-and-terminal source.
-2. **External credibility reference:** LoCoMo and LongMemEval are the benchmarks the field's actual memory systems report against. Adopting one of these published methodologies later is more credible than a bespoke score nobody outside the project can verify.
+This scoring explains the empty file entries in testing. File-state nodes never receive edges, so their centrality stays at zero, and their maximum score is 0.4. They can never reach the excerpt tier. Adding `REPLACES` edges between successive file states would give them centrality and might move them past the threshold. That fix was planned, but it was not built or tested.
 
----
+The `--full` view is built as the default. The `--new` view was never built, because nothing diffs a manifest against the previous one. Rejection, as built, deletes every record in a time window with no check on record type or supersession, which is why it removed the current version of working files.
 
-## 15. Cost
+Stale rule-file detection was designed but not built. The design rule was that Stenod would read a tool's instruction files and flag mismatches, but never write to them.
 
-Fully free. Node.js, SQLite, `chokidar`, `node-pty`, `web-tree-sitter`, `gpt-tokenizer`, `mockttp`, `node-forge`, and `wink-nlp` are all free, open-source packages. There's no hosted database, no vector DB service, and no cloud LLM calls during normal operation — the optional AI tie-breaker, when used, runs on the user's own key and their own dime, never the project's. There is no per-user or per-install cost for anyone who runs the tool.
+Delivery was designed around the clipboard as the guaranteed path, with the MCP resource as an optional layer on top. Every compiled manifest is logged before it is delivered.
 
----
+### Tech Stack
 
-## 16. Design Decision Log
+The stack below is what version 1.0 used. Only the entries marked as planned were chosen for version 2.0 work.
 
-A record of the material corrections made during design, kept so a future contributor understands *why* things are the way they are, not just what they are.
+| Area | Technology | Use |
+|---|---|---|
+| Runtime | Node.js 20 or later, TypeScript | Whole codebase |
+| Storage | SQLite through `better-sqlite3`, WAL mode | Causal graph and manifest log |
+| CLI | Commander.js | Command parsing |
+| File watching | chokidar | Filesystem capture |
+| Terminal bridge | node-pty | Terminal capture through `attach` |
+| Code parsing | web-tree-sitter | AST parser, not called on file save |
+| Tokenization | gpt-tokenizer | Token budget for packing |
+| HTTPS interception | mockttp, node-forge | Opt-in AI-provider capture tier |
+| Agent interface | Model Context Protocol SDK | `stenod mcp` |
+| Text analysis | wink-nlp | Planned for interpretation layer 1, not built |
+| Testing | Vitest | Unit and integration tests |
+| Linting and formatting | ESLint, Prettier | Code style |
 
-**Found during design, before any code was written:**
+The project stayed on Node.js and TypeScript by design. Python was considered for stronger language tooling and rejected, because a second runtime would need a cross-process bridge, and the marginal gain did not justify that cost.
+
+### Design Trade-offs
+
+The design made four choices that trade one property for another.
+
+Out-of-band recording was chosen over in-band memory. The cost is that the recorder cannot understand the reasoning on its own, so interpretation has to be deterministic or user-triggered. Testing supported the recording side, which worked for files and commands. The interpretation side was never built, so the benefit this trade-off was meant to produce was not delivered.
+
+Deterministic rules come before AI. An AI tie-breaker runs only when the user asks for it and supplies a key. The cost is lower recall on ambiguous text, with ambiguous items left open rather than classified.
+
+Everything stays local. Nothing leaves the machine, which makes the privacy claim checkable from the code. The cost is no remote viewing. A dashboard was planned for localhost only, and it was never built.
+
+Rejected decisions are kept first-class. The cost is that manifests grow, which the design limited with one-line summaries. Testing showed that file states reached only the one-line tier, so the size cost was never measured with real content.
+
+Taken together, these trade-offs favor an out-of-band recorder, and the file and terminal capture demonstrated that part. The interpretation layer that the trade-offs depend on was not built.
+
+### Scope and Limitations
+
+#### Never Built
+
+- Tool integrations for Claude Code, Codex, Kiro, Antigravity, and Cursor, including the `integrate` and `detach` commands
+- The settled, rejected, and open scoreboard in the running daemon
+- The interpretation layers (deterministic rules and the AI tie-breaker)
+- The cross-tool timeline merge
+- The delta handoff (`--new`)
+- Dependency-change capture
+- Stale rule-file detection
+- The local dashboard
+- Adaptive or learned weighting of records
+
+#### Known Failures From Testing
+
+The README lists every failure found during testing. The most important are these. Handoff file entries carry only filenames. Repeated saves never supersede earlier records. Rejection removes working versions of files. The daemon stopped without warning during a session on Windows. `stenod start` reports success without checking that the daemon started.
+
+#### Platform Limits
+
+Terminal capture through `stenod attach` and the network capture tier are Unix and Mac only. On Windows, capture was limited to the filesystem. Some Unix and Mac features were not tested at all.
+
+### Security, Privacy, and Trust
+
+What was built:
+
+- Secret exclusion. Files such as `.env`, the `.git` folder, `node_modules`, anything listed in `.gitignore`, and files over 500KB are kept out of capture. Testing confirmed that `.env` was never captured.
+- Regex redaction as a second layer of secret protection.
+- A local token generated by `stenod init` and stored in `.stenod/token`. It is a local secret, so the `.stenod` folder should never be committed or shared.
+- Authenticated inter-process communication and a workspace sandbox for each project.
+- The network capture tier is opt-in. It allowlists three AI-provider domains, applies two independent checks, and includes an uninstall path that removes the certificate. Code review credited the two-layer check, but the tier was not tested on Windows.
+
+What was designed but not built:
+
+- Rule files would be read but never written, so Stenod could not become a source of the staleness it was meant to detect.
+- Tool integration would be opt-in and reversible.
+- The AI tie-breaker would use only the user's key and run only at handoff time.
+
+The design committed to zero telemetry. This was not audited separately during testing.
+
+### Evaluation Strategy
+
+The one evaluation tool that was built is an exact-identifier recall harness in the `src/evaluation` folder, run with `npm run evaluate`. It measures what fraction of function names, error codes, and variable names in source records also appear in the compiled manifest. It is a development tool only. The daemon, the handoff command, and the MCP resource do not use it.
+
+The design planned to report results against two published benchmarks, LoCoMo and LongMemEval, so the numbers could be compared with other memory systems. Neither benchmark was run. Exact-identifier recall is of limited use while file entries carry only filenames, because the identifiers it counts never reach the manifest.
+
+### Cost
+
+Every component is a free, open-source package: Node.js, SQLite, chokidar, node-pty, web-tree-sitter, gpt-tokenizer, mockttp, node-forge, and wink-nlp. The project used no hosted database, no vector database, and no cloud model calls. The optional AI tie-breaker was designed to run on the user's own key, so any cost would fall on the user, not the project.
+
+### Design Decision Log
+
+This log records the design decisions and the corrections made during building and testing. The first group records corrections made during design.
 
 | Issue | Resolution |
 |---|---|
-| Early spec claimed both a greedy compiler and an FPTAS DP as current | Greedy-by-ratio plus a local-improvement pass is the actual algorithm; the FPTAS is out of scope, not silently half-implemented |
-| Storage spec disagreed on 2 vs. 4 tables | Settled on 3 core tables; other proposed tables cut as orthogonal scope |
-| A semantic-embedding fidelity score was listed as both in-scope and unvalidated | Cut entirely; replaced with exact-identifier recall (native) plus a reference to LoCoMo/LongMemEval (external) |
-| Conflict resolution described as both "implemented" and "doesn't exist yet" | Last-Writer-Wins built as a first-class mechanism |
-| Rejection semantics disagreed (count-based vs. time-based) | Time-window based (`--since`), matching FSM session boundaries |
-| Recency decay formula divided by zero at Δt=0 | Fixed to `1 / (1 + ln(1 + Δt))` |
-| Capture mechanism couldn't see IDE-native AI chat panels, only browser tabs | Generalized to a local HTTPS interception proxy covering any tool making outbound HTTPS calls |
-| HTTPS interception originally implied as default-on | Made strictly opt-in |
-| Package name collided with npm's similarity checks | Published as `steno-daemon`; the CLI command remains `stenod` |
+| An early spec described both a greedy compiler and a dynamic-programming packer as current | Greedy-by-ratio packing with a local improvement pass is the algorithm. The dynamic-programming packer was dropped, not partly built. |
+| The storage spec disagreed on the number of tables | Three core tables. Other proposed tables were cut as outside the scope. |
+| A semantic-embedding fidelity score was listed as both in scope and unvalidated | Cut. Replaced with exact-identifier recall and a reference to LoCoMo and LongMemEval. |
+| Conflict resolution was described as both implemented and missing | Last-writer-wins was built as a first-class mechanism. |
+| Rejection was defined by both a count and a time window | Time window (`--since`), matching session boundaries. |
+| The recency decay formula was undefined at zero elapsed time | Revised to 1 / (1 + ln(1 + Δt)), which is defined at zero. |
+| Capture could not see IDE-native chat panels, only browser tabs | Generalized to a local HTTPS interception proxy, opt-in only, covering any tool that makes outbound HTTPS calls. |
+| The package name collided with an existing npm name | Published as `steno-daemon`. The command remains `stenod`. |
+| The schema had no representation for decision state, tool provenance, or branch | Planned a DECISION node type, resolution fields, source-tool and git-branch columns, and a RESOLVES edge. The DECISION type and resolution fields were built. The rest was not. |
+| No deterministic way to tell whether two decisions concern the same topic | A three-step matching ladder: explicit key, then deterministic inference, then a flag for a possible conflict. |
+| Hooks and the terminal track could capture the same event | Planned a SHADOWED status, so the richer hook copy would be used and the terminal copy kept for audit. Not built. |
+| Tool hook configuration is global, but daemons are per project | Planned per-project resolution inside the hook script. Not built. |
 
-**Found during 1.0's actual implementation — real bugs a design review can't catch, only building can:**
+The second group records decisions to reject or defer.
 
-| Issue | Resolution |
+| Decision | Outcome |
 |---|---|
-| Phase 8.8's determinism test only ever covered the in-memory packing pipeline (8.4–8.7) — correct per each phase's own scope, but no phase had specified building the piece that connects the database to that pipeline, so genuine end-to-end determinism, including SQLite's own fetch ordering, went untested | Added Phase 8.9 (DB-to-manifest orchestrator) with an explicit `ORDER BY` requirement, closing the gap directly |
-| `stenod start` / `stenod stop` were originally designed as if they'd run in-memory, in-process — they don't, since each CLI invocation is its own process and the daemon has to persist after the command that started it exits | Fixed with a real detached spawn (`child_process.spawn({ detached: true })`) for `start` and OS-signal shutdown (`SIGTERM`, routed through the PID lock file) for `stop` |
-| The packed manifest's own node type never carried a node's actual content — only its id, type, status, and score — so every phase built on top of it (packing, delivery, MCP exposure) faithfully shipped manifests with no real resumable text in them, quietly defeating the project's entire stated purpose | Fixed via tiered content inclusion: full content for `CONSTRAINT` nodes, a bounded excerpt for anything scoring `>= 0.6`, a deterministic one-line summary otherwise — see §7.5 |
+| Build a small custom model to replace the tie-breaker | Rejected. Understanding context-dependent language needs a language model, and no labeled data existed to train one. |
+| Host a shared AI account for the tie-breaker | Rejected. The cost would grow with every user, which does not fit a free, personal tool. The user's own key is used instead. |
+| Make AI calls silently and automatically | Rejected. Spending someone's key without a trigger breaks trust. Capture is automatic, but anything that spends or acts is user-triggered. |
+| Inject the handoff into a resumed session automatically | Rejected in favor of a manual step, for consistency with the no-silent-action rule. |
+| Rewrite a tool's rule files | Rejected. Stenod reads and flags them but never writes. |
+| Send staleness alerts on a timer | Rejected in favor of alerts raised by events: at handoff, at status, and when a new decision contradicts a rule file. |
+| Demote rejected items to metadata | Rejected. Outside reviewers suggested it twice. First-class status stayed, because it is the mechanism that stops a dead idea from being proposed again. |
+| Reverse-engineer Cursor and VS Code chat storage | Rejected in favor of a maintained parser wrapped behind an adapter. |
+| Use Python for stronger language tooling | Rejected. A second runtime would need a cross-process bridge. |
+| Send handoff data to a hosted website, even without storing it | Rejected. "We don't store it" is a policy promise, not a structural guarantee. |
+| A website with login and synced handoffs | Rejected unless the data is end-to-end encrypted. Such a service would be a separate project. |
+| A browser chat capture module | Designed, then shelved. No capture path could be trusted fully, so the scope moved to terminal agents and IDEs. |
 
-**2.0's design phase, this expansion:**
+The third group records corrections made during building and testing.
 
-| Issue | Resolution |
-|---|---|
-| Full browser-chat capture module (extension, network-JSON capture, manual trigger) | Designed end to end, then shelved rather than deleted — no capture path a developer could fully trust, scope moved to terminal agents and agentic IDEs instead |
-| Building a custom or small AI model to replace the tie-breaker | Rejected — understanding fuzzy, context-dependent language is what an LLM is for; no cheaper floor exists, and no labeled data exists to train one anyway |
-| Hosting a shared AI account for the tie-breaker | Rejected — creates a bill that scales with every user, at odds with a free-tier-friendly, personal tool. User's own key instead |
-| Silent, fully-automatic AI calls with no trigger | Rejected — spending someone's key invisibly is a trust violation. Capture is automatic; anything that spends or acts is user-triggered |
-| Auto-injecting the handoff into a resumed session automatically | Rejected in favor of a manual button, for consistency with the no-silent-action principle, even though some tools support automatic injection |
-| Reading a tool's own rule/instruction files and rewriting them | Rejected — read-and-flag only. Writing to them risks Stenod becoming a source of the exact staleness it's meant to catch |
-| Continuous, timer-based staleness alerts | Rejected in favor of persistent-but-event-driven flags — surfaced at handoff, at status, and on a fresh contradiction, not on a repeating timer, to avoid training the user to ignore them |
-| Demoting rejected alternatives to metadata | Raised independently by outside reviewers, overridden both times — first-class status stays, because it's the mechanism that actually prevents a dead idea from being re-proposed |
-| Reverse-engineering Cursor's and VS Code's undocumented chat storage in-house | Rejected in favor of borrowing a maintained parser, wrapped behind an internal adapter, for the same reason a custom AI model was rejected — someone already maintains this better than a one-off effort would |
-| Using Python for stronger NLP tooling | Rejected — would reintroduce a cross-language IPC bridge and a second runtime dependency, which the original Node-only choice specifically eliminated; the marginal gain doesn't clear that cost |
-| Sending local handoff data to a hosted website, even without persisting it server-side | Rejected — "we don't store it" would be a policy promise, not a structural guarantee, undermining the exact thing that differentiates this project from in-band competitors |
-| A website with login and cloud-synced handoffs | Rejected — the only architecture that would preserve the no-data-leaves-the-machine guarantee is end-to-end encryption with a server that sees no usable plaintext, which is a major project of its own, not a dashboard feature |
-| Schema had no representation for decision state, tool provenance, or branch | Added `DECISION` node type, `resolution` / `resolution_reason` fields, `source_tool` and `git_branch` columns, and a `RESOLVES` edge type |
-| No deterministic way to know two decisions are about the same topic | Added a three-rung matching ladder — explicit key, then deterministic inference, then flag-as-possible-conflict rather than guess |
-| Assumption that AI tool hook payloads carry enough reasoning text was never verified | A capture-surface spike is the first build phase: wire minimal hooks, inspect real payloads, and confirm before any capture phase is built on the assumption |
-| Hooks and the terminal-attach track can both capture the same event | Added `source_tool` provenance and a `SHADOWED` status — the richer hook copy is authoritative, the terminal-track duplicate is kept for audit but excluded from compilation |
-| No process existed for wiring a tool's hooks into Stenod | Added `stenod integrate` / `stenod detach`, modeled directly on the existing opt-in, confirmed-undo pattern from the network-capture tier |
-| Antigravity's session data lives outside any project root | Added an auxiliary watch-path registration, matched to a project by workspace path, skipped rather than guessed at when no match is confident |
-| Tool hook configuration is global; Stenod's daemons are per-project | The hook script itself resolves each event's working directory upward for a `.stenod/` directory and delivers there, or exits silently if none exists |
-| Hook payloads never carry the user's own prompt text — only tool activity and the assistant's final message, which doesn't reliably restate the user's stated rationale | Resolved by scoped fallback: read transcript_path only for rejection-reasoning text, never as primary capture, wrapped behind a dedicated adapter — same isolation pattern already used for Cursor's parser — so if the format breaks, only the adapter breaks |
+| Issue | Resolution | Outcome |
+|---|---|---|
+| The determinism test covered the in-memory packing steps but not the database-to-manifest path | Added an orchestrator that reads from the database with an explicit ordering | Built. Determinism tests exist. |
+| `start` and `stop` were designed to run in one process, but each command runs in its own process | `start` uses a detached spawn. `stop` sends a signal through the PID lock file. | Built. `start` does not confirm that the daemon started. |
+| The manifest carried no node content | Tiered content: full text for constraints, excerpts above 0.6, one-line summaries otherwise | Built. Constraints appear in full. File states still fall to the one-line tier, as explained in section 7.6. |
+| The placeholder shell inside the daemon put prompt escape codes into manifests | Terminal capture removed from the daemon. `attach` is the only path. | Fixed. `attach` was not tested on Windows. |
+| Write failures were swallowed silently to keep the daemon running | Kept as built | Hid write failures and made daemon death hard to diagnose. Logging was planned but not built. |
+| Hook payloads did not include the user's prompt text | Planned a fallback that reads the transcript file for rejection reasoning | Not built |
+| The documentation described features that did not exist as working | This document and the README were rewritten to state what was built and what failed | Done |
