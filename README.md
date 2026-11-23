@@ -90,7 +90,7 @@ The package is on npm at https://www.npmjs.com/package/steno-daemon. The package
 
 ### Testing setup
 
-Testing was done on Windows. A full-stack bookmark manager was built over 20 prompts while Stenod ran in the background. Commands that only work on Unix and Mac were not tested.
+Testing was done on Windows. A full-stack project was built over a set of prompts while Stenod ran in the background. Commands that only work on Unix and Mac were not tested.
 
 ### License
 
